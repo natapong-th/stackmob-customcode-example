@@ -30,7 +30,6 @@ public class EntryPointExtender extends JarEntryObject {
     list.add(new HelloWorld());
     list.add(new TwilioSMS());
     list.add(new SendGrid());
-    list.add(new StackMobPush());
     list.add(new Stripe());
     return list;
   }
