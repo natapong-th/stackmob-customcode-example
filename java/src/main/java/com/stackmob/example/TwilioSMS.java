@@ -75,11 +75,11 @@ public class TwilioSMS implements CustomCodeMethod {
     //  text message you want to send
     String message = request.getParams().get("message");
 
-    if (toPhoneNumber == null || toPhoneNumber.equals("")) {
+    if (toPhoneNumber == null || toPhoneNumber.isEmpty()) {
       logger.error("Missing phone number");
     }
       
-    if (message == null || message.equals("")) {
+    if (message == null || message.isEmpty()) {
       logger.error("Missing message");
     }
 
@@ -97,14 +97,15 @@ public class TwilioSMS implements CustomCodeMethod {
     String pair = accountsid + ":" + accesstoken;
       
     // Base 64 Encode the accountsid/accesstoken
-    String encodedString = "";
+    String encodedString = new String("utf-8");
     try {
       byte[] b =Base64.encodeBase64(pair.getBytes("utf-8"));
       encodedString = new String(b);
     } catch (Exception e) {
       logger.error(e.getMessage(), e);
-      responseCode = HttpURLConnection.HTTP_INTERNAL_ERROR;
-      responseBody = e.getMessage();
+      HashMap<String, String> errParams = new HashMap<String, String>();
+      errParams.put("error", "the auth header threw an exception: " + e.getMessage());
+      return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
     }
     
     Header accept = new Header("Accept-Charset", "utf-8");

@@ -46,7 +46,7 @@ public class Stripe implements CustomCodeMethod {
 
   //Create your Stripe Acct at stripe.com and enter 
   //Your secret api key below.
-  public static final String secretKey = "sk_test_zK96ItRMZZiKPs31WKaCD6ah";
+  public static final String secretKey = "sk_test_zxxxxxxxxxxxxah";
 
   @Override
   public String getMethodName() {
@@ -78,11 +78,11 @@ public class Stripe implements CustomCodeMethod {
     // DESCRIPTION - the description of the transaction
     String description = request.getParams().get("description");
       
-    if (token.isEmpty() || token.trim().isEmpty()) {
+    if (token == null || token.isEmpty()) {
       logger.error("Token is missing");
     }
       
-    if (amount.isEmpty() || amount.trim().isEmpty()) {
+    if (amount == null || amount.isEmpty()) {
       logger.error("Amount is missing");
     }
 
@@ -102,14 +102,15 @@ public class Stripe implements CustomCodeMethod {
     String pair = secretKey;
       
     //Base 64 Encode the secretKey
-    String encodedString = "";
+    String encodedString = new String("utf-8");
     try {
       byte[] b =Base64.encodeBase64(pair.getBytes("utf-8"));
       encodedString = new String(b);
     } catch (Exception e) {
       logger.error(e.getMessage(), e);
-      responseCode = HttpURLConnection.HTTP_INTERNAL_ERROR;
-      responseBody = e.getMessage();
+      HashMap<String, String> errParams = new HashMap<String, String>();
+      errParams.put("error", "the auth header threw an exception: " + e.getMessage());
+      return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
     }
 
     Header accept = new Header("Accept-Charset", "utf-8");
