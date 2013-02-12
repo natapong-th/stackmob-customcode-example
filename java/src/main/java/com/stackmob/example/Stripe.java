@@ -42,21 +42,20 @@ import java.util.HashSet;
 import java.util.Set;
 import org.apache.commons.codec.binary.Base64;
 
-public class TwilioSMS implements CustomCodeMethod {
+public class Stripe implements CustomCodeMethod {
 
-  //Create your Twilio Acct at twilio.com and enter 
-  //Your accountsid and accesstoken below.
-  public static final String accountsid = "YOUR_ACCOUNTSID";
-  public static final String accesstoken = "YOUR_ACCESSTOKEN";
-    
+  //Create your Stripe Acct at stripe.com and enter 
+  //Your secret api key below.
+  public static final String secretKey = "sk_test_zxxxxxxxxxxxxah";
+
   @Override
   public String getMethodName() {
-    return "twilio_sms";
+    return "stripe";
   }
 
   @Override
   public List<String> getParams() {
-    return Arrays.asList("tophonenumber","message");
+    return Arrays.asList("amount","token","description");
   }  
 
   @Override
@@ -64,39 +63,45 @@ public class TwilioSMS implements CustomCodeMethod {
     int responseCode = 0;
     String responseBody = "";
 
-	LoggerService logger = serviceProvider.getLoggerService(TwilioSMS.class);
+    LoggerService logger = serviceProvider.getLoggerService(Stripe.class);
       
-    // TO phonenumber should be YOUR cel phone
-    String toPhoneNumber = request.getParams().get("tophonenumber");
+    // AMOUNT should be a whole integer - ie 100 is 1 US dollar
+    String amount = request.getParams().get("amount");
       
-    //  FROM phonenumber should be one create in the twilio dashboard at twilio.com
-    String fromPhoneNumber = "9259488599";
+    //  CURRENCY - should be one of the supported currencies, please check STRIPE documentation.
+    String currency = "usd";
       
-    //  text message you want to send
-    String message = request.getParams().get("message");
-
-    if (toPhoneNumber == null || toPhoneNumber.isEmpty()) {
-      logger.error("Missing phone number");
+    //  TOKEN - is returned when you submit the credit card information to stripe using
+    // the Stripe JavaScript library.
+    String token = request.getParams().get("token");
+      
+    // DESCRIPTION - the description of the transaction
+    String description = request.getParams().get("description");
+      
+    if (token == null || token.isEmpty()) {
+      logger.error("Token is missing");
     }
       
-    if (message == null || message.isEmpty()) {
-      logger.error("Missing message");
+    if (amount == null || amount.isEmpty()) {
+      logger.error("Amount is missing");
     }
 
     StringBuilder body = new StringBuilder();
 
-    body.append("To=");
-    body.append(toPhoneNumber);
-    body.append("&From=");
-    body.append(fromPhoneNumber);
-    body.append("&Body=");
-    body.append(message);
+    body.append("amount=");
+    body.append(amount);
+    body.append("&currency=");
+    body.append(currency);
+    body.append("&card=");
+    body.append(token);
+    body.append("&description=");
+    body.append(description);
 
-    String url = "https://api.twilio.com/2010-04-01/Accounts/" + accountsid + "/SMS/Messages.json";
-    
-    String pair = accountsid + ":" + accesstoken;
+    //String body = "amount=" + amount + "&currency=" + currency + "&card=" + token + "&description=" + description;
+    String url = "https://api.stripe.com/v1/charges";
+    String pair = secretKey;
       
-    // Base 64 Encode the accountsid/accesstoken
+    //Base 64 Encode the secretKey
     String encodedString = new String("utf-8");
     try {
       byte[] b =Base64.encodeBase64(pair.getBytes("utf-8"));
@@ -107,9 +112,9 @@ public class TwilioSMS implements CustomCodeMethod {
       errParams.put("error", "the auth header threw an exception: " + e.getMessage());
       return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
     }
-    
+
     Header accept = new Header("Accept-Charset", "utf-8");
-    Header auth = new Header("Authorization","Basic " + encodedString);
+    Header auth = new Header("Authorization","Basic " + encodedString );
     Header content = new Header("Content-Type", "application/x-www-form-urlencoded");
 
     Set<Header> set = new HashSet();
@@ -126,19 +131,19 @@ public class TwilioSMS implements CustomCodeMethod {
       responseBody = resp.getBody();
     } catch(TimeoutException e) {
       logger.error(e.getMessage(), e);
-      responseCode = HttpURLConnection.HTTP_BAD_GATEWAY;;
+      responseCode = HttpURLConnection.HTTP_BAD_GATEWAY;
       responseBody = e.getMessage();
     } catch(AccessDeniedException e) {
       logger.error(e.getMessage(), e);
-      responseCode = HttpURLConnection.HTTP_INTERNAL_ERROR;;
+      responseCode = HttpURLConnection.HTTP_INTERNAL_ERROR;
       responseBody = e.getMessage();
     } catch(MalformedURLException e) {
       logger.error(e.getMessage(), e);
-      responseCode = HttpURLConnection.HTTP_INTERNAL_ERROR;;
+      responseCode = HttpURLConnection.HTTP_INTERNAL_ERROR;
       responseBody = e.getMessage();
     } catch(ServiceNotActivatedException e) {
       logger.error(e.getMessage(), e);
-      responseCode = HttpURLConnection.HTTP_INTERNAL_ERROR;;
+      responseCode = HttpURLConnection.HTTP_INTERNAL_ERROR;
       responseBody = e.getMessage();
     }
       
