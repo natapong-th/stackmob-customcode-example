@@ -31,13 +31,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.lang.String;
-import java.lang.StringBuilder;
+import java.lang.Boolean;
 
-public class Test implements CustomCodeMethod {
+public class GetDatabase implements CustomCodeMethod {
 
 	@Override
 	public String getMethodName() {
-		return "test";
+		return "get_database";
 	}
 	
 	@Override
@@ -47,8 +47,15 @@ public class Test implements CustomCodeMethod {
 	
 	@Override
 	public ResponseToProcess execute(ProcessedAPIRequest request, SDKServiceProvider serviceProvider) {
-		LoggerService logger = serviceProvider.getLoggerService(Test.class);
+		// only allow GET method
+		String verb = request.getVerb().toString();
+		if (!verb.equalsIgnoreCase("get")) {
+			HashMap<String, String> errParams = new HashMap<String, String>();
+			errParams.put("error", "invalid method");
+			return new ResponseToProcess(HttpURLConnection.HTTP_BAD_METHOD, errParams); // http 405 - method not allowed
+		}
 		
+		// try getting logged-in user
 		String username = request.getLoggedInUser();
 		if (username == null || username.isEmpty()) {
 			HashMap<String, String> errParams = new HashMap<String, String>();
@@ -56,7 +63,7 @@ public class Test implements CustomCodeMethod {
 			return new ResponseToProcess(HttpURLConnection.HTTP_UNAUTHORIZED, errParams); // http 401 - unauthorized
 		}
 		
-		// get the datastore service and assemble the query
+		// get the datastore service
 		DataService dataService = serviceProvider.getDataService();
 		
 		// create a response
@@ -80,30 +87,36 @@ public class Test implements CustomCodeMethod {
 					String value = ((SMString)fieldValue).getValue();
 					returnMap.put(userStringFields[i], value);
 				}
-				// fetch user's status
-				// - get status id
-				SMValue statusIdValue = userObject.getValue().get("status");
-				// - build query
-				List<SMCondition> statusQuery = new ArrayList<SMCondition>();
-				statusQuery.add(new SMEquals("status_id", ((SMString)statusIdValue)));
-				// - execute query
-				List<SMObject> statuses = dataService.readObjects("status", statusQuery);
-				if (statuses != null && statuses.size() == 1) {
-					SMObject statusObject = statuses.get(0);
-					// 2. action, place
-					for (int i = 0; i < statusStringFields.length; i++) {
-						SMValue fieldValue = statusObject.getValue().get(statusStringFields[i]);
-						String value = ((SMString)fieldValue).getValue();
-						returnMap.put(statusStringFields[i], value);
+				// check if user already has status or not
+				if (userObject.getValue().containsKey("status")) {
+					returnMap.put("new_user", new SMBoolean(Boolean.FALSE));
+					// fetch user's status
+					// - get status id
+					SMValue statusIdValue = userObject.getValue().get("status");
+					// - build query
+					List<SMCondition> statusQuery = new ArrayList<SMCondition>();
+					statusQuery.add(new SMEquals("status_id", ((SMString)statusIdValue)));
+					// - execute query
+					List<SMObject> statuses = dataService.readObjects("status", statusQuery);
+					if (statuses != null && statuses.size() == 1) {
+						SMObject statusObject = statuses.get(0);
+						// 2. action, place
+						for (int i = 0; i < statusStringFields.length; i++) {
+							SMValue fieldValue = statusObject.getValue().get(statusStringFields[i]);
+							String value = ((SMString)fieldValue).getValue();
+							returnMap.put(statusStringFields[i], value);
+						}
+						// 3. status mod date
+						SMValue modDateValue = statusObject.getValue().get("status_mod_date");
+						Long modDate = ((SMInt)modDateValue).getValue();
+						returnMap.put("status_mod_date", modDate);
+					} else {
+						// TO DO:
+						// handle status fetch error
+						
 					}
-					// 3. status mod date
-					SMValue modDateValue = statusObject.getValue().get("status_mod_date");
-					Long modDate = ((SMInt)modDateValue).getValue();
-					returnMap.put("status_mod_date", modDate);
 				} else {
-					// TO DO:
-					// handle status fetch error
-					
+					returnMap.put("new_user", new SMBoolean(Boolean.TRUE));
 				}
 				// 4. friends
 				List<Map<String, Object>> friends = new ArrayList<Map<String, Object>>();
