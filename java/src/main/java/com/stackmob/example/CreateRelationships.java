@@ -96,7 +96,12 @@ public class CreateRelationships implements CustomCodeMethod {
 		
 		// create a response
 		try {
+			// TO DO:
+			// check if any friend's username does not exist
+			// check if any relationship already exists or any friend's username is yourself first
+			
 			List<String> relIds = new ArrayList<String>();
+			List<SMString> relIdStrings = new ArrayList<SMString>();
 			for (int i = 0; i < friendUsernames.size(); i++) {
 				// create a new relationship
 				Map<String, SMValue> relMap = new HashMap<String, SMValue>();
@@ -106,10 +111,8 @@ public class CreateRelationships implements CustomCodeMethod {
 				SMObject relObject = dataService.createObject("relationship", new SMObject(relMap));
 				SMString relId = (SMString)relObject.getValue().get("relationship_id");
 				
-				// add relationship in user's relationships_by_user
-				List<SMString> relIdList = new ArrayList<SMString>();
-				relIdList.add(relId);
-				dataService.addRelatedObjects("user", userId, "relationships_by_user", relIdList);
+				// add relationship to array for user's relationships_by_user
+				relIdStrings.add(relId);
 				
 				// add user as relationship's owner
 				List<SMString> ownerIdList = new ArrayList<SMString>();
@@ -117,6 +120,8 @@ public class CreateRelationships implements CustomCodeMethod {
 				dataService.addRelatedObjects("relationship", relId, "owner", ownerIdList);
 				
 				// add relationship in friend's relationships_by_others
+				List<SMString> relIdList = new ArrayList<SMString>();
+				relIdList.add(relId);
 				SMString friendId = new SMString(friendUsernames.get(i));
 				dataService.addRelatedObjects("user", friendId, "relationships_by_others", relIdList);
 				
@@ -127,6 +132,9 @@ public class CreateRelationships implements CustomCodeMethod {
 				
 				relIds.add(relId.getValue());
 			}
+			// add all relationships in user's relationships_by_user
+			dataService.addRelatedObjects("user", userId, "relationships_by_user", relIdStrings);
+			
 			// return created relationship data for local database
 			Map<String, Object> returnMap = new HashMap<String, Object>();
 			returnMap.put("relationship_id", relIds);

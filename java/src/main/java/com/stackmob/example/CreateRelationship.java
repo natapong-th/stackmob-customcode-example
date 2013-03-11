@@ -86,6 +86,10 @@ public class CreateRelationship implements CustomCodeMethod {
 			HashMap<String, String> errParams = new HashMap<String, String>();
 			errParams.put("error", "username parameter not found");
 			return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
+		} else if (friendUsername.equals(username)) {
+			HashMap<String, String> errParams = new HashMap<String, String>();
+			errParams.put("error", "cannot add relationship with yourself");
+			return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
 		}
 		SMString friendId = new SMString(friendUsername);
 		
@@ -94,6 +98,9 @@ public class CreateRelationship implements CustomCodeMethod {
 		
 		// create a response
 		try {
+			// TO DO:
+			// check if the relationship already exists first
+			
 			// create a new relationship
 			Map<String, SMValue> relMap = new HashMap<String, SMValue>();
 			relMap.put("sm_owner", new SMString("user/" + username));

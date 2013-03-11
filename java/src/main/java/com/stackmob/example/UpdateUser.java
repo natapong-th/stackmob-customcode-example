@@ -37,23 +37,23 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-public class CreateGroups implements CustomCodeMethod {
+public class UpdateUser implements CustomCodeMethod {
 
 	@Override
 	public String getMethodName() {
-		return "create_groups";
+		return "update_user";
 	}
 	
 	@Override
 	public List<String> getParams() {
-		return Arrays.asList("titles");
+		return Arrays.asList("name", "profile_image_url", "group_order");
 	}
 	
 	@Override
 	public ResponseToProcess execute(ProcessedAPIRequest request, SDKServiceProvider serviceProvider) {
-		// only allow POST method
+		// only allow PUT method
 		String verb = request.getVerb().toString();
-		if (!verb.equalsIgnoreCase("post")) {
+		if (!verb.equalsIgnoreCase("put")) {
 			HashMap<String, String> errParams = new HashMap<String, String>();
 			errParams.put("error", "invalid method");
 			return new ResponseToProcess(HttpURLConnection.HTTP_BAD_METHOD, errParams); // http 405 - method not allowed
@@ -68,16 +68,27 @@ public class CreateGroups implements CustomCodeMethod {
 			return new ResponseToProcess(HttpURLConnection.HTTP_UNAUTHORIZED, errParams); // http 401 - unauthorized
 		}
 		
-		// get requested group titles
-		List<String> titles = new ArrayList<String>();
+		// get update parameters
+		String name = "";
+		boolean newName = false;
+		String profileImageURL = "";
+		boolean newImage = false;
+		String groupOrder = "";
+		boolean newOrder = false;
 		if (!request.getBody().isEmpty()) {
 			try {
 				JSONObject jsonObj = new JSONObject(request.getBody());
-				if (!jsonObj.isNull("titles")) {
-					JSONArray titleArray = jsonObj.getJSONArray("titles");
-					for (int i = 0; i < titleArray.length(); i++) {
-						titles.add(titleArray.getString(i));
-					}
+				if (!jsonObj.isNull("name")) {
+					name = jsonObj.getString("name");
+					newName = true;
+				}
+				if (!jsonObj.isNull("profile_image_url")) {
+					profileImageURL = jsonObj.getString("profile_image_url");
+					newImage = true;
+				}
+				if (!jsonObj.isNull("group_order")) {
+					groupOrder = jsonObj.getString("group_order");
+					newOrder = true;
 				}
 			} catch (JSONException e) {
 				HashMap<String, String> errParams = new HashMap<String, String>();
@@ -85,9 +96,9 @@ public class CreateGroups implements CustomCodeMethod {
 				return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
 			}
 		}
-		if (titles.size() == 0) {
+		if (!newName && !newImage && !newOrder) {
 			HashMap<String, String> errParams = new HashMap<String, String>();
-			errParams.put("error", "titles parameter not found");
+			errParams.put("error", "no parameters to update");
 			return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
 		}
 		
@@ -96,65 +107,74 @@ public class CreateGroups implements CustomCodeMethod {
 		
 		// create a response
 		try {
-			// fetch user object
-			// - build query
-			List<SMCondition> userQuery = new ArrayList<SMCondition>();
-			userQuery.add(new SMEquals("username", userId));
-			// - execute query
-			List<SMObject> users = dataService.readObjects("user", userQuery);
-			if (users != null && users.size() == 1) {
-				SMObject userObject = users.get(0);
-				List<String> groupIds = new ArrayList<String>();
-				String addedGroupOrder = "";
-				for (int i = 0; i < titles.size(); i++) {
-					String title = titles.get(i);
-					// create a new group
-					Map<String, SMValue> groupMap = new HashMap<String, SMValue>();
-					groupMap.put("sm_owner", new SMString("user/" + username));
-					groupMap.put("title", new SMString(title));
-					groupMap.put("relationship_order", new SMString(""));
-					SMObject groupObject = dataService.createObject("group", new SMObject(groupMap));
-					SMString groupId = (SMString)groupObject.getValue().get("group_id");
-					
-					// add group in user's groups
-					List<SMString> groupIdList = new ArrayList<SMString>();
-					groupIdList.add(groupId);
-					dataService.addRelatedObjects("user", userId, "groups", groupIdList);
-					
-					// add user as group's owner
-					List<SMString> ownerIdList = new ArrayList<SMString>();
-					ownerIdList.add(userId);
-					dataService.addRelatedObjects("group", groupId, "owner", ownerIdList);
-					
-					// add group id to group order
-					addedGroupOrder = addedGroupOrder + groupId.getValue() + "|";
-					
-					groupIds.add(groupId.getValue());
-				}
-				// update user's group order
-				List<SMUpdate> userUpdates = new ArrayList<SMUpdate>();
-				if (userObject.getValue().containsKey("group_order")) {
-					String groupOrder = ((SMString)userObject.getValue().get("group_order")).getValue();
-					userUpdates.add(new SMSet("group_order", new SMString(groupOrder + addedGroupOrder)));
-				} else {
-					userUpdates.add(new SMSet("group_order", new SMString(addedGroupOrder)));
-				}
-				dataService.updateObject("user", userId, userUpdates);
-				
-				// return created group data for local database
-				Map<String, Object> returnMap = new HashMap<String, Object>();
-				returnMap.put("group_ids", groupIds);
-				return new ResponseToProcess(HttpURLConnection.HTTP_OK, returnMap);
-			} else {
-				// TO DO:
-				// handle user fetch error
-				
-				HashMap<String, String> errMap = new HashMap<String, String>();
-				errMap.put("error", "invalid user fetch");
-				errMap.put("detail", (users == null ? "null fetch result" : ("fetch result count = " + users.size())));
-				return new ResponseToProcess(HttpURLConnection.HTTP_INTERNAL_ERROR, errMap);
+			Map<String, Object> returnMap = new HashMap<String, Object>();
+			List<SMUpdate> userUpdates = new ArrayList<SMUpdate>();
+			// 1. change name
+			if (newName) {
+				userUpdates.add(new SMSet("name", new SMString(name)));
+				returnMap.put("name", name);
 			}
-			
+			// 2. change profile url
+			if (newImage) {
+				userUpdates.add(new SMSet("profile_image_url", new SMString(profileImageURL)));
+				returnMap.put("profile_image_url", profileImageURL);
+			}
+			// 3. change group order
+			if (newOrder) {
+				// fetch user object
+				// - build query
+				List<SMCondition> userQuery = new ArrayList<SMCondition>();
+				userQuery.add(new SMEquals("username", userId));
+				// - execute query
+				List<SMObject> users = dataService.readObjects("user", userQuery);
+				if (users != null && users.size() == 1) {
+					SMObject userObject = users.get(0);
+					// check if group order is valid
+					String[] groupOrderArray = groupOrder.split("|");
+					List<SMString> groupsList = new ArrayList<SMString>();
+					if (userObject.getValue().containsKey("groups")) {
+						SMValue groupsValue = userObject.getValue().get("groups");
+						groupsList = ((SMList<SMString>)groupsValue).getValue();
+					}
+					boolean validOrder = (groupsList.size() == groupOrderArray.length);
+					if (validOrder) {
+						for (int i = 0; i < groupsList.size(); i++) {
+							String groupId = groupsList.get(i).getValue();
+							boolean found = false;
+							for (int j = 0; j < groupOrderArray.length; j++) {
+								if (groupOrderArray[j].equals(groupId)) {
+									found = true;
+									break;
+								}
+							}
+							if (!found) {
+								validOrder = false;
+								break;
+							}
+						}
+					}
+					if (validOrder) {
+						userUpdates.add(new SMSet("group_order", new SMString(groupOrder)));
+						returnMap.put("group_order", groupOrder);
+					} else {
+						HashMap<String, String> errParams = new HashMap<String, String>();
+						errParams.put("error", "invalid group order");
+						return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
+					}
+				} else {
+					// TO DO:
+					// handle user fetch error
+					
+					HashMap<String, String> errMap = new HashMap<String, String>();
+					errMap.put("error", "invalid user fetch");
+					errMap.put("detail", (users == null ? "null fetch result" : ("fetch result count = " + users.size())));
+					return new ResponseToProcess(HttpURLConnection.HTTP_INTERNAL_ERROR, errMap);
+				}
+			}
+			// update user
+			dataService.updateObject("user", userId, userUpdates);
+			// return updated data for local database
+			return new ResponseToProcess(HttpURLConnection.HTTP_OK, returnMap);
 		} catch (InvalidSchemaException e) {
 			HashMap<String, String> errMap = new HashMap<String, String>();
 			errMap.put("error", "invalid_schema");

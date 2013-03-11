@@ -32,6 +32,11 @@ public class EntryPointExtender extends JarEntryObject {
 	list.add(new CreateGroup());
 	list.add(new CreateGroups());
 	list.add(new CreateRelationship());
+	list.add(new CreateRelationships());
+	list.add(new UpdateUser());
+	list.add(new UpdateStatus());
+	list.add(new UpdateRelationships());
+	list.add(new UpdateGroup());
     return list;
   }
 
