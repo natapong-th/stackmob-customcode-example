@@ -62,21 +62,25 @@ public class UpdateRelationships implements CustomCodeMethod {
 		
 		// try getting logged-in user
 		String username = request.getLoggedInUser();
-		SMString userId = new SMString(username);
 		if (username == null || username.isEmpty()) {
 			HashMap<String, String> errParams = new HashMap<String, String>();
 			errParams.put("error", "no user is logged in");
 			return new ResponseToProcess(HttpURLConnection.HTTP_UNAUTHORIZED, errParams); // http 401 - unauthorized
 		}
+		SMString userId = new SMString(username);
 		
 		// get update parameters
-		String relIds = "";
+		List<SMString> relIds = new ArrayList<SMString>();
 		long type = 0L;
 		if (!request.getBody().isEmpty()) {
 			try {
 				JSONObject jsonObj = new JSONObject(request.getBody());
 				if (!jsonObj.isNull("relationship_ids")) {
-					relIds = jsonObj.getString("relationship_ids");
+					JSONArray relIdArray = jsonObj.getJSONArray("relationship_ids");
+					for (int i = 0; i < relIdArray.length(); i++) {
+						String relId = relIdArray.getString(i);
+						relIds.add(new SMString(relId));
+					}
 				}
 				if (!jsonObj.isNull("type")) {
 					type = Long.parseLong(jsonObj.getString("type"));
@@ -87,7 +91,7 @@ public class UpdateRelationships implements CustomCodeMethod {
 				return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
 			}
 		}
-		if (relIds.isEmpty() || type < 2 || type > 4) {
+		if (relIds.size() == 0 || type < 2L || type > 4L) {
 			HashMap<String, String> errParams = new HashMap<String, String>();
 			errParams.put("error", "invalid parameters");
 			return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
@@ -101,54 +105,120 @@ public class UpdateRelationships implements CustomCodeMethod {
 			// fetch relationship objects
 			// - build query
 			List<SMCondition> relQuery = new ArrayList<SMCondition>();
-			String[] relArray = relIds.split("|");
-			List<SMString> relList = new ArrayList<SMString>();
-			for (int i = 0; i < relArray.length; i++) {
-				relList.add(new SMString(relArray[i]));
-			}
-			relQuery.add(new SMIn("relationship_id", relList));
+			relQuery.add(new SMIn("relationship_id", relIds));
 			// - build result filter
 			List<String> fields = new ArrayList<String>();
 			fields.add("relationship_id");
+			fields.add("type_by_owner");
+			fields.add("type_by_receiver");
 			fields.add("owner");
-			fields.add("owner.username");
 			fields.add("receiver");
-			fields.add("receiver.username");
+			fields.add("events_by_owner");
+			fields.add("events_by_receiver");
+			fields.add("groups_by_owner");
+			fields.add("groups_by_owner.group_id");
+			fields.add("groups_by_owner.relationship_order");
+			fields.add("groups_by_receiver");
+			fields.add("groups_by_receiver.group_id");
+			fields.add("groups_by_receiver.relationship_order");
 			ResultFilters filter = new ResultFilters(0, -1, null, fields);
 			// - execute query
 			List<SMObject> rels = dataService.readObjects("relationship", relQuery, 1, filter);
-			if (rels != null && rels.size() == relList.size()) {
-				String foundRelIds = "";
+			if (rels != null && rels.size() == relIds.size()) {
+				List<SMString> foundRelIds = new ArrayList<SMString>();
 				for (int i = 0; i < rels.size(); i++) {
 					SMObject relObject = rels.get(i);
-					SMString relId = (SMString) relObject.getValue().get("relationship_id");
-					// check if fetched relationship is as requested
-					int idx = relIds.indexOf(relId.getValue());
-					if (idx != -1) {
-						relIds = relIds.replaceFirst(relId.getValue(), "");
-						foundRelIds = foundRelIds + relId.getValue() + "|";
-					} else {
-						HashMap<String, String> errMap = new HashMap<String, String>();
-						errMap.put("error", "invalid relationship fetch");
-						errMap.put("detail", "unexpected fetch result = " + relId.getValue());
-						return new ResponseToProcess(HttpURLConnection.HTTP_INTERNAL_ERROR, errMap);
+					SMString relId = (SMString)relObject.getValue().get("relationship_id");
+					// find user's role in this relationship
+					SMString ownerId = (SMString)relObject.getValue().get("owner");
+					String userRole = "";
+					if (ownerId.equals(userId)) {
+						userRole = "owner";
+					} else if (relObject.getValue().containsKey("receiver")) {
+						SMString receiverId = (SMString)relObject.getValue().get("receiver");
+						if (receiverId.equals(userId)) {
+							userRole = "receiver";
+						}
 					}
-					// update type according to user's position (owner/receiver)
-					SMObject ownerObject = (SMObject) relObject.getValue().get("owner");
-					SMString ownerUsername = (SMString) ownerObject.getValue().get("username");
-					SMObject receiverObject = (SMObject) relObject.getValue().get("receiver");
-					SMString receiverUsername = (SMString) receiverObject.getValue().get("username");
-					List<SMUpdate> relUpdates = new ArrayList<SMUpdate>();
-					if (ownerUsername.getValue().equals(username)) {
-						relUpdates.add(new SMSet("type_by_owner", new SMInt(type)));
-					} else if (receiverUsername.getValue().equals(username)) {
-						relUpdates.add(new SMSet("type_by_receiver", new SMInt(type)));
-					} else {
-						HashMap<String, String> errParams = new HashMap<String, String>();
-						errParams.put("error", "requested relationships are inaccessible by this user");
-						return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
+					// if user is in this relationship, change its type by user
+					if (!userRole.isEmpty()) {
+						String typeUserKey = "type_by_" + userRole;
+						SMInt typeUser = (SMInt)relObject.getValue().get(typeUserKey);
+						if (typeUser.getValue().longValue() != type) {
+							// if type changes from no response to accepted, create a friend accept event (only if you're not blocked/deleted)
+							String typeOtherKey = "type_by_" + (userRole.equals("owner") ? "receiver" : "owner");
+							SMInt typeOther = (SMInt)relObject.getValue().get(typeOtherKey);
+							if (type == 2L && typeUser.getValue().longValue() == 1L && typeOther.getValue().longValue() == 2L) {
+								Map<String, SMValue> eventMap = new HashMap<String, SMValue>();
+								eventMap.put("sm_owner", new SMString("user/" + username));
+								eventMap.put("type", new SMInt(2L));
+								SMObject eventObject = dataService.createObject("event", new SMObject(eventMap));
+								// get the new event id
+								SMString eventId = (SMString)relObject.getValue().get("relationship_id");
+								// add event in relationship's events_by_owner
+								List<SMString> joinEventIdList = new ArrayList<SMString>();
+								joinEventIdList.add(eventId);
+								dataService.addRelatedObjects("relationship", relId, "events_by_" + userRole, joinEventIdList);
+								// add relationship as event's relationship
+								List<SMString> relIdList = new ArrayList<SMString>();
+								relIdList.add(relId);
+								dataService.addRelatedObjects("event", eventId, "relationship_by_" + userRole, relIdList);
+							}
+							// if type changes to block or delete, remove all events from both sides
+							// no need to remove if any of the types is already block or delete
+							if (type >= 3L && typeUser.getValue().longValue() < 3L && typeOther.getValue().longValue() < 3L) {
+								if (relObject.getValue().containsKey("events_by_owner")) {
+									SMList<SMString> events = (SMList<SMString>)relObject.getValue().get("events_by_owner");
+									dataService.removeRelatedObjects("relationship", relId, "events_by_owner", events, true);
+								}
+								if (relObject.getValue().containsKey("events_by_receiver")) {
+									SMList<SMString> events = (SMList<SMString>)relObject.getValue().get("events_by_receiver");
+									dataService.removeRelatedObjects("relationship", relId, "events_by_receiver", events, true);
+								}
+							}
+							// if type changes from friend to block or delete, remove this relationship from all groups
+							if (type >= 3L && typeUser.getValue().longValue() < 3L) {
+								String groupKey = "groups_by_" + userRole;
+								if (relObject.getValue().containsKey(groupKey)) {
+									SMList<SMObject> groupsValue = (SMList<SMObject>)relObject.getValue().get(groupKey);
+									List<SMObject> groupsList = groupsValue.getValue();
+									// remove relationship from each group's relationships by user
+									List<SMString> relIdList = new ArrayList<SMString>();
+									relIdList.add(relId);
+									String relKey = "relationships_by_" + (userRole.equals("owner") ? "owner" : "others");
+									List<SMString> groupIdList = new ArrayList<SMString>();
+									for (int j = 0; j < groupsList.size(); j++) {
+										SMObject groupObject = groupsList.get(j);
+										SMString groupId = (SMString)groupObject.getValue().get("group_id");
+										dataService.removeRelatedObjects("group", groupId, relKey, relIdList, false);
+										groupIdList.add(groupId);
+										// remove from group's relationship order as well
+										SMList<SMString> relOrderValue = (SMList<SMString>)groupObject.getValue().get("relationship_order");
+										List<SMString> relOrder = relOrderValue.getValue();
+										List<SMUpdate> groupUpdates = new ArrayList<SMUpdate>();
+										for (int k = 0; k < relOrder.size(); k++) {
+											if (relOrder.get(k).equals(relId)) {
+												relOrder.remove(k);
+												groupUpdates.add(new SMSet("relationship_order", new SMList<SMString>(relOrder)));
+												break;
+											}
+										}
+										if (groupUpdates.size() > 0) {
+											dataService.updateObject("group", groupId, groupUpdates);
+										}
+									}
+									// remove groups from relationship's groups by user
+									dataService.removeRelatedObjects("relationship", relId, groupKey, groupIdList, false);
+								}
+							}
+							// update type by user
+							List<SMUpdate> relUpdates = new ArrayList<SMUpdate>();
+							relUpdates.add(new SMSet(typeUserKey, new SMInt(type)));
+							dataService.updateObject("relationship", relId, relUpdates);
+							
+							foundRelIds.add(relId);
+						}
 					}
-					dataService.updateObject("relationship", relId, relUpdates);
 				}
 				// return updated data for local database
 				Map<String, Object> returnMap = new HashMap<String, Object>();

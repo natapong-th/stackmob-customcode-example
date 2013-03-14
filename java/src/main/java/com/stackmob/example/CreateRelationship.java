@@ -32,11 +32,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Arrays;
 import java.lang.String;
+import java.lang.Boolean;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+// ***DEPRECATED***
 public class CreateRelationship implements CustomCodeMethod {
 
 	@Override
@@ -98,39 +100,138 @@ public class CreateRelationship implements CustomCodeMethod {
 		
 		// create a response
 		try {
-			// TO DO:
-			// check if the relationship already exists first
-			
-			// create a new relationship
-			Map<String, SMValue> relMap = new HashMap<String, SMValue>();
-			relMap.put("sm_owner", new SMString("user/" + username));
-			relMap.put("type_by_owner", new SMInt(2L));
-			relMap.put("type_by_receiver", new SMInt(1L));
-			SMObject relObject = dataService.createObject("relationship", new SMObject(relMap));
-			SMString relId = (SMString)relObject.getValue().get("relationship_id");
-			
-			// add relationship in user's relationships_by_user
-			List<SMString> relIdList = new ArrayList<SMString>();
-			relIdList.add(relId);
-			dataService.addRelatedObjects("user", userId, "relationships_by_user", relIdList);
-			
-			// add user as relationship's owner
-			List<SMString> ownerIdList = new ArrayList<SMString>();
-			ownerIdList.add(userId);
-			dataService.addRelatedObjects("relationship", relId, "owner", ownerIdList);
-			
-			// add relationship in friend's relationships_by_others
-			dataService.addRelatedObjects("user", friendId, "relationships_by_others", relIdList);
-			
-			// add friend as relationship's receiver
-			List<SMString> receiverIdList = new ArrayList<SMString>();
-			receiverIdList.add(friendId);
-			dataService.addRelatedObjects("relationship", relId, "receiver", receiverIdList);
-			
-			// return created relationship data for local database
-			Map<String, Object> returnMap = new HashMap<String, Object>();
-			returnMap.put("relationship_id", relId.getValue());
-			return new ResponseToProcess(HttpURLConnection.HTTP_OK, returnMap);
+			// check if friend's username exists
+			// fetch friend object
+			// - build query
+			List<SMCondition> friendQuery = new ArrayList<SMCondition>();
+			friendQuery.add(new SMEquals("username", friendId));
+			// - build result filter
+			List<String> fields = new ArrayList<String>();
+			fields.add("relationships_by_user");
+			fields.add("relationships_by_user.relationship_id");
+			fields.add("relationships_by_user.type_by_receiver");
+			fields.add("relationships_by_user.receiver");
+			fields.add("relationships_by_user.receiver.username");
+			fields.add("relationships_by_others");
+			fields.add("relationships_by_others.relationship_id");
+			fields.add("relationships_by_others.type_by_owner");
+			fields.add("relationships_by_others.owner");
+			fields.add("relationships_by_others.owner.username");
+			ResultFilters filter = new ResultFilters(0, -1, null, fields);
+			// - execute query
+			List<SMObject> friends = dataService.readObjects("user", friendQuery, 2, filter);
+			if (friends != null && friends.size() == 1) {
+				SMObject friendObject = friends.get(0);
+				Map<String, Object> returnMap = new HashMap<String, Object>();
+				// check if the relationship already exists
+				// - relationships by user
+				List<SMObject> relUserList = new ArrayList<SMObject>();
+				if (friendObject.getValue().containsKey("relationships_by_user")) {
+					SMList<SMObject> relUserValue = (SMList<SMObject>)friendObject.getValue().get("relationships_by_user");
+					relUserList = relUserValue.getValue();
+				}
+				for (int i = 0; i < relUserList.size(); i++) {
+					SMObject relObject = relUserList.get(i);
+					SMObject userObject = (SMObject)relObject.getValue().get("receiver");
+					SMString tempId = (SMString)userObject.getValue().get("username");
+					if (tempId.getValue().equals(username)) {
+						SMInt typeUserValue = (SMInt)relObject.getValue().get("type_by_receiver");
+						Long typeUser = typeUserValue.getValue();
+						// if it's deleted by user, change to friend
+						// otherwise do not change
+						if (typeUser.longValue() == 4L) {
+							SMString relId = (SMString)relObject.getValue().get("relationship_id");
+							List<SMUpdate> relUpdates = new ArrayList<SMUpdate>();
+							relUpdates.add(new SMSet("type_by_receiver", new SMInt(2L)));
+							dataService.updateObject("relationship", relId, relUpdates);
+							returnMap.put("new_relationship", Boolean.FALSE);
+							returnMap.put("relationship_id", relId.getValue());
+							return new ResponseToProcess(HttpURLConnection.HTTP_OK, returnMap);
+						} else {
+							HashMap<String, String> errMap = new HashMap<String, String>();
+							errMap.put("error", "cannot create existing relationship");
+							return new ResponseToProcess(HttpURLConnection.HTTP_INTERNAL_ERROR, errMap);
+						}
+					}
+				}
+				// - relationships by others
+				List<SMObject> relOthersList = new ArrayList<SMObject>();
+				if (friendObject.getValue().containsKey("relationships_by_others")) {
+					SMList<SMObject> relOthersValue = (SMList<SMObject>)friendObject.getValue().get("relationships_by_others");
+					relOthersList = relOthersValue.getValue();
+				}
+				for (int i = 0; i < relOthersList.size(); i++) {
+					SMObject relObject = relOthersList.get(i);
+					SMObject userObject = (SMObject)relObject.getValue().get("owner");
+					SMString tempId = (SMString)userObject.getValue().get("username");
+					if (tempId.getValue().equals(username)) {
+						SMInt typeUserValue = (SMInt)relObject.getValue().get("type_by_owner");
+						Long typeUser = typeUserValue.getValue();
+						// if it's deleted by user, change to friend
+						// otherwise do not change
+						if (typeUser.longValue() == 4L) {
+							SMString relId = (SMString)relObject.getValue().get("relationship_id");
+							List<SMUpdate> relUpdates = new ArrayList<SMUpdate>();
+							relUpdates.add(new SMSet("type_by_receiver", new SMInt(2L)));
+							dataService.updateObject("relationship", relId, relUpdates);
+							returnMap.put("new_relationship", Boolean.FALSE);
+							returnMap.put("relationship_id", relId.getValue());
+							return new ResponseToProcess(HttpURLConnection.HTTP_OK, returnMap);
+						} else {
+							HashMap<String, String> errMap = new HashMap<String, String>();
+							errMap.put("error", "cannot create existing relationship");
+							return new ResponseToProcess(HttpURLConnection.HTTP_INTERNAL_ERROR, errMap);
+						}
+					}
+				}
+				// if not, create a new relationship
+				Map<String, SMValue> relMap = new HashMap<String, SMValue>();
+				relMap.put("sm_owner", new SMString("user/" + username));
+				relMap.put("type_by_owner", new SMInt(2L));
+				relMap.put("type_by_receiver", new SMInt(1L));
+				relMap.put("change_by_owner", new SMBoolean(false));
+				relMap.put("change_by_receiver", new SMBoolean(false));
+				relMap.put("interaction_by_owner", new SMInt(1L));
+				relMap.put("interaction_by_receiver", new SMInt(1L));
+				SMObject relObject = dataService.createObject("relationship", new SMObject(relMap));
+				SMString relId = (SMString)relObject.getValue().get("relationship_id");
+				
+				// add relationship in user's relationships_by_user
+				List<SMString> relIdList = new ArrayList<SMString>();
+				relIdList.add(relId);
+				dataService.addRelatedObjects("user", userId, "relationships_by_user", relIdList);
+				
+				// add user as relationship's owner
+				List<SMString> ownerIdList = new ArrayList<SMString>();
+				ownerIdList.add(userId);
+				dataService.addRelatedObjects("relationship", relId, "owner", ownerIdList);
+				
+				// add relationship in friend's relationships_by_others
+				dataService.addRelatedObjects("user", friendId, "relationships_by_others", relIdList);
+				
+				// add friend as relationship's receiver
+				List<SMString> receiverIdList = new ArrayList<SMString>();
+				receiverIdList.add(friendId);
+				dataService.addRelatedObjects("relationship", relId, "receiver", receiverIdList);
+				
+				// return created relationship data for local database
+				returnMap.put("new_relationship", Boolean.TRUE);
+				returnMap.put("relationship_id", relId.getValue());
+				return new ResponseToProcess(HttpURLConnection.HTTP_OK, returnMap);
+			} else if (friends != null && friends.size() == 0) {
+				// TO DO:
+				// create relationship and mark as invitation
+				
+				return new ResponseToProcess(HttpURLConnection.HTTP_OK, null);
+			} else {
+				// TO DO:
+				// handle user fetch error
+				
+				HashMap<String, String> errMap = new HashMap<String, String>();
+				errMap.put("error", "invalid friend fetch");
+				errMap.put("detail", (friends == null ? "null fetch result" : ("fetch result count = " + friends.size())));
+				return new ResponseToProcess(HttpURLConnection.HTTP_INTERNAL_ERROR, errMap);
+			}
 		} catch (InvalidSchemaException e) {
 			HashMap<String, String> errMap = new HashMap<String, String>();
 			errMap.put("error", "invalid_schema");

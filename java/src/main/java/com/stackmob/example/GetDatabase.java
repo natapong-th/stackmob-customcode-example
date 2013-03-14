@@ -30,8 +30,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Arrays;
 import java.lang.String;
-import java.lang.Boolean;
+import java.lang.Long;
 
 public class GetDatabase implements CustomCodeMethod {
 
@@ -42,7 +43,7 @@ public class GetDatabase implements CustomCodeMethod {
 	
 	@Override
 	public List<String> getParams() {
-		return new ArrayList<String>();
+		return Arrays.asList("last_sync_date");
 	}
 	
 	@Override
@@ -63,290 +64,284 @@ public class GetDatabase implements CustomCodeMethod {
 			return new ResponseToProcess(HttpURLConnection.HTTP_UNAUTHORIZED, errParams); // http 401 - unauthorized
 		}
 		
+		// get the parameter
+		long lastSyncDate = 0;
+		try {
+			lastSyncDate = Long.parseLong(request.getParams().get("last_sync_date"));
+		} catch (Exception e) {
+			HashMap<String, String> errParams = new HashMap<String, String>();
+			errParams.put("error", "invalid request parameter");
+			return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
+		}
+		
 		// get the datastore service
 		DataService dataService = serviceProvider.getDataService();
 		
 		// create a response
 		try {
-			Map<String, Object> returnMap = new HashMap<String, Object>();
-			String[] userStringFields = {"username", "name", "profile_image_url", "group_order"};
-			String[] friendStringFields = {"username", "name", "profile_image_url"};
+			String[] userStringFields = {"name", "profile_image_url"};
 			String[] statusStringFields = {"action", "place"};
-			String[] groupStringFields = {"group_id", "title", "relationship_order"};
+			String[] groupStringFields = {"group_id", "title"};
 			// fetch user object
 			// - build query
 			List<SMCondition> userQuery = new ArrayList<SMCondition>();
 			userQuery.add(new SMEquals("username", new SMString(username)));
+			// - build result filter
+			// -- build required fields
+			List<String> fields = new ArrayList<String>();
+			// -- 1. user
+			for (int i = 0; i < userStringFields.length; i++) {
+				fields.add(userStringFields[i]);
+			}
+			for (int i = 0; i < statusStringFields.length; i++) {
+				fields.add(statusStringFields[i]);
+			}
+			fields.add("group_order");
+			fields.add("user_mod_date");
+			fields.add("status_mod_date");
+			fields.add("groups_mod_date");
+			// -- 2. relationships by user
+			fields.add("relationships_by_user");
+			fields.add("relationships_by_user.relationship_id");
+			fields.add("relationships_by_user.type_by_owner");
+			fields.add("relationships_by_user.type_by_receiver");
+			fields.add("relationships_by_user.invite_email");
+			// -- 2.1. relationships by user's receiver
+			fields.add("relationships_by_user.receiver");
+			fields.add("relationships_by_user.receiver.username");
+			for (int i = 0; i < userStringFields.length; i++) {
+				fields.add("relationships_by_user.receiver." + userStringFields[i]);
+			}
+			for (int i = 0; i < statusStringFields.length; i++) {
+				fields.add("relationships_by_user.receiver." + statusStringFields[i]);
+			}
+			fields.add("relationships_by_user.receiver.user_mod_date");
+			fields.add("relationships_by_user.receiver.status_mod_date");
+			// -- 2.2. relationships by user's events
+			fields.add("relationships_by_user.events_by_receiver");
+			fields.add("relationships_by_user.events_by_receiver.type");
+			fields.add("relationships_by_user.events_by_receiver.createddate");
+			// -- 3. relationships by others
+			fields.add("relationships_by_others");
+			fields.add("relationships_by_others.relationship_id");
+			fields.add("relationships_by_others.type_by_owner");
+			fields.add("relationships_by_others.type_by_receiver");
+			// -- 3.1. relationships by others' owner
+			fields.add("relationships_by_others.owner");
+			fields.add("relationships_by_others.owner.username");
+			for (int i = 0; i < userStringFields.length; i++) {
+				fields.add("relationships_by_others.owner." + userStringFields[i]);
+			}
+			for (int i = 0; i < statusStringFields.length; i++) {
+				fields.add("relationships_by_others.owner." + statusStringFields[i]);
+			}
+			fields.add("relationships_by_others.owner.user_mod_date");
+			fields.add("relationships_by_others.owner.status_mod_date");
+			// -- 3.2. relationships by others' events
+			fields.add("relationships_by_others.events_by_owner");
+			fields.add("relationships_by_others.events_by_owner.type");
+			fields.add("relationships_by_others.events_by_owner.createddate");
+			// -- 4. groups
+			fields.add("groups");
+			for (int i = 0; i < groupStringFields.length; i++) {
+				fields.add("groups." + groupStringFields[i]);
+			}
+			fields.add("groups.relationship_order");
+			ResultFilters filter = new ResultFilters(0, -1, null, fields);
 			// - execute query
-			List<SMObject> users = dataService.readObjects("user", userQuery);
+			List<SMObject> users = dataService.readObjects("user", userQuery, 2, filter);
 			if (users != null && users.size() == 1) {
 				SMObject userObject = users.get(0);
-				// 1. username, name, profile image, group order
-				for (int i = 0; i < userStringFields.length; i++) {
-					SMValue fieldValue = userObject.getValue().get(userStringFields[i]);
-					String value = ((SMString)fieldValue).getValue();
-					returnMap.put(userStringFields[i], value);
-				}
-				// check if user already has status or not
-				if (userObject.getValue().containsKey("status")) {
-					returnMap.put("new_user", new SMBoolean(Boolean.FALSE));
-					// fetch user's status
-					// - get status id
-					SMValue statusIdValue = userObject.getValue().get("status");
-					// - build query
-					List<SMCondition> statusQuery = new ArrayList<SMCondition>();
-					statusQuery.add(new SMEquals("status_id", ((SMString)statusIdValue)));
-					// - execute query
-					List<SMObject> statuses = dataService.readObjects("status", statusQuery);
-					if (statuses != null && statuses.size() == 1) {
-						SMObject statusObject = statuses.get(0);
-						// 2. action, place
-						for (int i = 0; i < statusStringFields.length; i++) {
-							SMValue fieldValue = statusObject.getValue().get(statusStringFields[i]);
-							String value = ((SMString)fieldValue).getValue();
-							returnMap.put(statusStringFields[i], value);
-						}
-						// 3. status mod date
-						SMValue modDateValue = statusObject.getValue().get("status_mod_date");
-						Long modDate = ((SMInt)modDateValue).getValue();
-						returnMap.put("status_mod_date", modDate);
-					} else {
-						// TO DO:
-						// handle status fetch error
-						
+				Map<String, Object> returnMap = new HashMap<String, Object>();
+ 				// 1. username
+				returnMap.put("username", username);
+				// 2. name, profile image, group order (check user mod date)
+				SMInt userModValue = (SMInt)userObject.getValue().get("user_mod_date");
+				long userModDate = userModValue.getValue().longValue();
+				if (lastSyncDate < userModDate) {
+					for (int i = 0; i < userStringFields.length; i++) {
+						SMString fieldValue = (SMString)userObject.getValue().get(userStringFields[i]);
+						returnMap.put(userStringFields[i], fieldValue.getValue());
 					}
-				} else {
-					returnMap.put("new_user", new SMBoolean(Boolean.TRUE));
+					List<SMString> groupOrderList = new ArrayList<SMString>();
+					if (userObject.getValue().containsKey("group_order")) {
+						SMList<SMString> groupOrderValue = (SMList<SMString>)userObject.getValue().get("group_order");
+						groupOrderList = groupOrderValue.getValue();
+					}
+					returnMap.put("group_order", groupOrderList);
+				}
+				// 3. action, place, status mod date (check status mod date)
+				SMInt statusModValue = (SMInt)userObject.getValue().get("status_mod_date");
+				long statusModDate = statusModValue.getValue().longValue();
+				if (lastSyncDate < statusModDate) {
+					for (int i = 0; i < statusStringFields.length; i++) {
+						SMString fieldValue = (SMString)userObject.getValue().get(statusStringFields[i]);
+						returnMap.put(statusStringFields[i], fieldValue.getValue());
+					}
+					returnMap.put("status_mod_date", statusModValue.getValue());
 				}
 				// 4. friends
 				List<Map<String, Object>> friends = new ArrayList<Map<String, Object>>();
 				// relationships by user
-				List<SMString> relUserList = new ArrayList<SMString>();
+				List<SMObject> relUserList = new ArrayList<SMObject>();
 				if (userObject.getValue().containsKey("relationships_by_user")) {
-					SMValue relUserValue = userObject.getValue().get("relationships_by_user");
-					relUserList = ((SMList<SMString>)relUserValue).getValue();
+					SMList<SMObject> relUserValue = (SMList<SMObject>)userObject.getValue().get("relationships_by_user");
+					relUserList = relUserValue.getValue();
 				}
 				for (int i = 0; i < relUserList.size(); i++) {
 					Map<String, Object> friendMap = new HashMap<String, Object>();
-					// fetch user's relationship
-					// - get relationship id
-					SMString relIdString = relUserList.get(i);
-					// - build query
-					List<SMCondition> relQuery = new ArrayList<SMCondition>();
-					relQuery.add(new SMEquals("relationship_id", relIdString));
-					// - execute query
-					List<SMObject> rels = dataService.readObjects("relationship", relQuery);
-					if (rels != null && rels.size() == 1) {
-						SMObject relObject = rels.get(0);
-						// 4.1. relationship id
-						SMValue relIdValue = relObject.getValue().get("relationship_id");
-						String relId = ((SMString)relIdValue).getValue();
-						friendMap.put("relationship_id", relId);
-						// 4.2. type by user
-						SMValue typeUserValue = relObject.getValue().get("type_by_owner");
-						Long typeUser = ((SMInt)typeUserValue).getValue();
-						friendMap.put("type_by_user", typeUser);
-						// 4.3 type by friend
-						SMValue typeFriendValue = relObject.getValue().get("type_by_receiver");
-						Long typeFriend = ((SMInt)typeFriendValue).getValue();
-						friendMap.put("type_by_friend", typeFriend);
-						// fetch friend's user object
-						// - get friend's username
-						SMValue friendUsernameValue = relObject.getValue().get("receiver");
-						// - build query
-						List<SMCondition> friendQuery = new ArrayList<SMCondition>();
-						friendQuery.add(new SMEquals("username", (SMString)friendUsernameValue));
-						// - execute query
-						List<SMObject> friendUsers = dataService.readObjects("user", friendQuery);
-						if (friendUsers != null && friendUsers.size() == 1) {
-							SMObject friendObject = friendUsers.get(0);
-							// 4.4. username, name, profile image
-							for (int j = 0; j < friendStringFields.length; j++) {
-								SMValue fieldValue = friendObject.getValue().get(friendStringFields[j]);
-								String value = ((SMString)fieldValue).getValue();
-								friendMap.put(friendStringFields[j], value);
+					SMObject relObject = relUserList.get(i);
+					// 4.1. relationship id
+					SMString relIdValue = (SMString)relObject.getValue().get("relationship_id");
+					friendMap.put("relationship_id", relIdValue.getValue());
+					// 4.2. type by user
+					SMInt typeUserValue = (SMInt)relObject.getValue().get("type_by_owner");
+					Long typeUser = typeUserValue.getValue();
+					friendMap.put("type_by_user", typeUser);
+					// 4.3. type by friend
+					SMInt typeFriendValue = (SMInt)relObject.getValue().get("type_by_receiver");
+					Long typeFriend = typeFriendValue.getValue();
+					friendMap.put("type_by_friend", typeFriend);
+					// check if this relationship is an invite
+					SMString inviteValue = (SMString)relObject.getValue().get("invite_email");
+					if (inviteValue.getValue().isEmpty()) {
+						SMObject friendObject = (SMObject)relObject.getValue().get("receiver");
+						// 4.4. username
+						SMString friendIdValue = (SMString)friendObject.getValue().get("username");
+						friendMap.put("username", friendIdValue.getValue());
+						// 4.5. name, profile image (check user mod date)
+						SMInt fUserModValue = (SMInt)friendObject.getValue().get("user_mod_date");
+						long fUserModDate = fUserModValue.getValue().longValue();
+						if (lastSyncDate < fUserModDate) {
+							for (int j = 0; j < userStringFields.length; j++) {
+								SMString fieldValue = (SMString)friendObject.getValue().get(userStringFields[j]);
+								friendMap.put(userStringFields[j], fieldValue.getValue());
 							}
-							// fetch friend's status
-							// - get status id
-							SMValue friendStatusIdValue = friendObject.getValue().get("status");
-							// - build query
-							List<SMCondition> friendStatusQuery = new ArrayList<SMCondition>();
-							friendStatusQuery.add(new SMEquals("status_id", ((SMString)friendStatusIdValue)));
-							// - execute query
-							List<SMObject> friendStatuses = dataService.readObjects("status", friendStatusQuery);
-							if (friendStatuses != null && friendStatuses.size() == 1) {
-								SMObject friendStatusObject = friendStatuses.get(0);
-								// 4.5. action, place
-								for (int k = 0; k < statusStringFields.length; k++) {
-									SMValue fieldValue = friendStatusObject.getValue().get(statusStringFields[k]);
-									String value = ((SMString)fieldValue).getValue();
-									friendMap.put(statusStringFields[k], value);
+						}
+						// check if type is mutual friend
+						if (typeUser.longValue() == 2L && typeFriend.longValue() == 2L) {
+							// 4.6. action, place, status mod date (check status mod date)
+							SMInt fStatusModValue = (SMInt)friendObject.getValue().get("status_mod_date");
+							long fStatusModDate = fStatusModValue.getValue().longValue();
+							if (lastSyncDate < fStatusModDate) {
+								for (int j = 0; j < statusStringFields.length; j++) {
+									SMString fieldValue = (SMString)friendObject.getValue().get(statusStringFields[j]);
+									friendMap.put(statusStringFields[j], fieldValue.getValue());
 								}
-								// 4.6. status mod date
-								SMValue modDateValue = friendStatusObject.getValue().get("status_mod_date");
-								Long modDate = ((SMInt)modDateValue).getValue();
-								friendMap.put("status_mod_date", modDate);
-							} else {
-								// TO DO:
-								// handle friend's status fetch error
-								
+								friendMap.put("status_mod_date", fStatusModValue.getValue());
 							}
-						} else {
-							// TO DO:
-							// handle friend's user fetch error
-							
+							// 4.7. events
+							List<SMObject> eventsList = new ArrayList<SMObject>();
+							if (relObject.getValue().containsKey("events_by_receiver")) {
+								SMList<SMObject> eventsValue = (SMList<SMObject>)relObject.getValue().get("events_by_receiver");
+								eventsList = eventsValue.getValue();
+							}
+							friendMap.put("events", eventsList);
 						}
 					} else {
-						// TO DO:
-						// handle relationship fetch error
-						
+						friendMap.put("invite_email", inviteValue.getValue());
 					}
+					
 					friends.add(friendMap);
 				}
 				// relationships by others
-				List<SMString> relOthersList = new ArrayList<SMString>();
+				List<SMObject> relOthersList = new ArrayList<SMObject>();
 				if (userObject.getValue().containsKey("relationships_by_others")) {
-					SMValue relOthersValue = userObject.getValue().get("relationships_by_others");
-					relOthersList = ((SMList<SMString>)relOthersValue).getValue();
+					SMList<SMObject> relOthersValue = (SMList<SMObject>)userObject.getValue().get("relationships_by_others");
+					relOthersList = relOthersValue.getValue();
 				}
 				for (int i = 0; i < relOthersList.size(); i++) {
 					Map<String, Object> friendMap = new HashMap<String, Object>();
-					// fetch user's relationship
-					// - get relationship id
-					SMString relIdString = relOthersList.get(i);
-					// - build query
-					List<SMCondition> relQuery = new ArrayList<SMCondition>();
-					relQuery.add(new SMEquals("relationship_id", relIdString));
-					// - execute query
-					List<SMObject> rels = dataService.readObjects("relationship", relQuery);
-					if (rels != null && rels.size() == 1) {
-						SMObject relObject = rels.get(0);
-						// 4.1. relationship id
-						SMValue relIdValue = relObject.getValue().get("relationship_id");
-						String relId = ((SMString)relIdValue).getValue();
-						friendMap.put("relationship_id", relId);
-						// 4.2. type by user
-						SMValue typeUserValue = relObject.getValue().get("type_by_receiver");
-						Long typeUser = ((SMInt)typeUserValue).getValue();
-						friendMap.put("type_by_user", typeUser);
-						// 4.3 type by friend
-						SMValue typeFriendValue = relObject.getValue().get("type_by_owner");
-						Long typeFriend = ((SMInt)typeFriendValue).getValue();
-						friendMap.put("type_by_friend", typeFriend);
-						// fetch friend's user object
-						// - get friend's username
-						SMValue friendUsernameValue = relObject.getValue().get("owner");
-						// - build query
-						List<SMCondition> friendQuery = new ArrayList<SMCondition>();
-						friendQuery.add(new SMEquals("username", (SMString)friendUsernameValue));
-						// - execute query
-						List<SMObject> friendUsers = dataService.readObjects("user", friendQuery);
-						if (friendUsers != null && friendUsers.size() == 1) {
-							SMObject friendObject = friendUsers.get(0);
-							// 4.4. username, name, profile image
-							for (int j = 0; j < friendStringFields.length; j++) {
-								SMValue fieldValue = friendObject.getValue().get(friendStringFields[j]);
-								String value = ((SMString)fieldValue).getValue();
-								friendMap.put(friendStringFields[j], value);
-							}
-							// fetch friend's status
-							// - get status id
-							SMValue friendStatusIdValue = friendObject.getValue().get("status");
-							// - build query
-							List<SMCondition> friendStatusQuery = new ArrayList<SMCondition>();
-							friendStatusQuery.add(new SMEquals("status_id", ((SMString)friendStatusIdValue)));
-							// - execute query
-							List<SMObject> friendStatuses = dataService.readObjects("status", friendStatusQuery);
-							if (friendStatuses != null && friendStatuses.size() == 1) {
-								SMObject friendStatusObject = friendStatuses.get(0);
-								// 4.5. action, place
-								for (int k = 0; k < statusStringFields.length; k++) {
-									SMValue fieldValue = friendStatusObject.getValue().get(statusStringFields[k]);
-									String value = ((SMString)fieldValue).getValue();
-									friendMap.put(statusStringFields[k], value);
-								}
-								// 4.6. status mod date
-								SMValue modDateValue = friendStatusObject.getValue().get("status_mod_date");
-								Long modDate = ((SMInt)modDateValue).getValue();
-								friendMap.put("status_mod_date", modDate);
-							} else {
-								// TO DO:
-								// handle friend's status fetch error
-								
-							}
-						} else {
-							// TO DO:
-							// handle friend's user fetch error
-							
+					SMObject relObject = relOthersList.get(i);
+					// 4.1. relationship id
+					SMString relIdValue = (SMString)relObject.getValue().get("relationship_id");
+					friendMap.put("relationship_id", relIdValue.getValue());
+					// 4.2. type by user
+					SMInt typeUserValue = (SMInt)relObject.getValue().get("type_by_receiver");
+					Long typeUser = typeUserValue.getValue();
+					friendMap.put("type_by_user", typeUser);
+					// 4.3. type by friend
+					SMInt typeFriendValue = (SMInt)relObject.getValue().get("type_by_owner");
+					Long typeFriend = typeFriendValue.getValue();
+					friendMap.put("type_by_friend", typeFriend);
+					
+					SMObject friendObject = (SMObject)relObject.getValue().get("owner");
+					// 4.4. username
+					SMString friendIdValue = (SMString)friendObject.getValue().get("username");
+					friendMap.put("username", friendIdValue.getValue());
+					// 4.5. name, profile image (check user mod date)
+					SMInt fUserModValue = (SMInt)friendObject.getValue().get("user_mod_date");
+					long fUserModDate = fUserModValue.getValue().longValue();
+					if (lastSyncDate < fUserModDate) {
+						for (int j = 0; j < userStringFields.length; j++) {
+							SMString fieldValue = (SMString)friendObject.getValue().get(userStringFields[j]);
+							friendMap.put(userStringFields[j], fieldValue.getValue());
 						}
-					} else {
-						// TO DO:
-						// handle relationship fetch error
-						
+					}
+					// check if type is mutual friend
+					if (typeUser.longValue() == 2L && typeFriend.longValue() == 2L) {
+						// 4.6. action, place, status mod date (check status mod date)
+						SMInt fStatusModValue = (SMInt)friendObject.getValue().get("status_mod_date");
+						long fStatusModDate = fStatusModValue.getValue().longValue();
+						if (lastSyncDate < fStatusModDate) {
+							for (int j = 0; j < statusStringFields.length; j++) {
+								SMString fieldValue = (SMString)friendObject.getValue().get(statusStringFields[j]);
+								friendMap.put(statusStringFields[j], fieldValue.getValue());
+							}
+							friendMap.put("status_mod_date", fStatusModValue.getValue());
+						}
+						// 4.7. events
+						List<SMObject> eventsList = new ArrayList<SMObject>();
+						if (relObject.getValue().containsKey("events_by_owner")) {
+							SMList<SMObject> eventsValue = (SMList<SMObject>)relObject.getValue().get("events_by_owner");
+							eventsList = eventsValue.getValue();
+						}
+						friendMap.put("events", eventsList);
 					}
 					friends.add(friendMap);
 				}
 				returnMap.put("friends", friends);
-				// 5. groups
-				List<Map<String, Object>> localGroups = new ArrayList<Map<String, Object>>();
-				List<SMString> groupsList = new ArrayList<SMString>();
-				if (userObject.getValue().containsKey("groups")) {
-					SMValue groupsValue = userObject.getValue().get("groups");
-					groupsList = ((SMList<SMString>)groupsValue).getValue();
-				}
-				for (int i = 0; i < groupsList.size(); i++) {
-					Map<String, Object> groupMap = new HashMap<String, Object>();
-					// fetch group
-					// - get group id
-					SMString groupId = groupsList.get(i);
-					// - build query
-					List<SMCondition> groupQuery = new ArrayList<SMCondition>();
-					groupQuery.add(new SMEquals("group_id", groupId));
-					// - execute query
-					List<SMObject> groups = dataService.readObjects("group", groupQuery);
-					if (groups != null && groups.size() == 1) {
-						SMObject groupObject = groups.get(0);
-						// 5.1. group id, title, friend order
-						for (int j = 0; j < groupStringFields.length; j++) {
-							SMValue fieldValue = groupObject.getValue().get(groupStringFields[j]);
-							String value = ((SMString)fieldValue).getValue();
-							groupMap.put(groupStringFields[j], value);
-						}
-						// 5.2. group members
-						List<String> friendsList = new ArrayList<String>();
-						// relationships by owner
-						List<SMString> relsGroupOwnerList = new ArrayList<SMString>();
-						if (groupObject.getValue().containsKey("relationships_by_owner")) {
-							SMValue relsGroupOwnerValue = groupObject.getValue().get("relationships_by_owner");
-							relsGroupOwnerList = ((SMList<SMString>)relsGroupOwnerValue).getValue();
-						}
-						for (int j = 0; j < relsGroupOwnerList.size(); j++) {
-							friendsList.add(relsGroupOwnerList.get(j).getValue());
-						}
-						// relationships by others
-						List<SMString> relsGroupOthersList = new ArrayList<SMString>();
-						if (groupObject.getValue().containsKey("relationships_by_others")) {
-							SMValue relsGroupOthersValue = groupObject.getValue().get("relationships_by_others");
-							relsGroupOthersList = ((SMList<SMString>)relsGroupOthersValue).getValue();
-						}
-						for (int j = 0; j < relsGroupOthersList.size(); j++) {
-							friendsList.add(relsGroupOthersList.get(j).getValue());
-						}
-						groupMap.put("friends", friendsList);
-					} else {
-						// TO DO:
-						// handle group fetch error
-						
+				// 5. groups (check groups mod date)
+				SMInt groupsModValue = (SMInt)userObject.getValue().get("groups_mod_date");
+				long groupsModDate = groupsModValue.getValue().longValue();
+				if (lastSyncDate < groupsModDate) {
+					List<Map<String, Object>> localGroups = new ArrayList<Map<String, Object>>();
+					List<SMObject> groupsList = new ArrayList<SMObject>();
+					if (userObject.getValue().containsKey("groups")) {
+						SMList<SMObject> groupsValue = (SMList<SMObject>)userObject.getValue().get("groups");
+						groupsList = groupsValue.getValue();
 					}
-					localGroups.add(groupMap);
+					for (int i = 0; i < groupsList.size(); i++) {
+						Map<String, Object> groupMap = new HashMap<String, Object>();
+						SMObject groupObject = groupsList.get(i);
+						// 5.1. group id, title
+						for (int j = 0; j < groupStringFields.length; j++) {
+							SMString fieldValue = (SMString)groupObject.getValue().get(groupStringFields[j]);
+							groupMap.put(groupStringFields[j], fieldValue.getValue());
+						}
+						// 5.2. friend order
+						List<SMString> friendOrderList = new ArrayList<SMString>();
+						if (groupObject.getValue().containsKey("relationship_order")) {
+							SMList<SMString> friendOrderValue = (SMList<SMString>)groupObject.getValue().get("relationship_order");
+							friendOrderList = friendOrderValue.getValue();
+						}
+						groupMap.put("friend_order", friendOrderList);
+						
+						localGroups.add(groupMap);
+					}
+					returnMap.put("groups", localGroups);
 				}
-				returnMap.put("groups", localGroups);
+				// return the translated database
+				return new ResponseToProcess(HttpURLConnection.HTTP_OK, returnMap);
 			} else {
 				// TO DO:
 				// handle user fetch error
 				
+				HashMap<String, String> errMap = new HashMap<String, String>();
+				errMap.put("error", "invalid user fetch");
+				errMap.put("detail", (users == null ? "null fetch result" : ("fetch result count = " + users.size())));
+				return new ResponseToProcess(HttpURLConnection.HTTP_INTERNAL_ERROR, errMap);
 			}
-			return new ResponseToProcess(HttpURLConnection.HTTP_OK, returnMap);
 		} catch (InvalidSchemaException e) {
 			HashMap<String, String> errMap = new HashMap<String, String>();
 			errMap.put("error", "invalid_schema");

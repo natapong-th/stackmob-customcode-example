@@ -28,13 +28,9 @@ public class EntryPointExtender extends JarEntryObject {
   public List<CustomCodeMethod> methods() {
     List<CustomCodeMethod> list = new ArrayList<CustomCodeMethod>();
 	list.add(new GetDatabase());
-    list.add(new CreateStatus());
-	list.add(new CreateGroup());
-	list.add(new CreateGroups());
-	list.add(new CreateRelationship());
 	list.add(new CreateRelationships());
+	list.add(new CreateGroups());
 	list.add(new UpdateUser());
-	list.add(new UpdateStatus());
 	list.add(new UpdateRelationships());
 	list.add(new UpdateGroup());
     return list;

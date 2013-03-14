@@ -32,6 +32,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Arrays;
 import java.lang.String;
+import java.lang.Long;
+import java.lang.System;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -61,12 +63,12 @@ public class CreateGroups implements CustomCodeMethod {
 		
 		// try getting logged-in user
 		String username = request.getLoggedInUser();
-		SMString userId = new SMString(username);
 		if (username == null || username.isEmpty()) {
 			HashMap<String, String> errParams = new HashMap<String, String>();
 			errParams.put("error", "no user is logged in");
 			return new ResponseToProcess(HttpURLConnection.HTTP_UNAUTHORIZED, errParams); // http 401 - unauthorized
 		}
+		SMString userId = new SMString(username);
 		
 		// get requested group titles
 		List<String> titles = new ArrayList<String>();
@@ -75,8 +77,12 @@ public class CreateGroups implements CustomCodeMethod {
 				JSONObject jsonObj = new JSONObject(request.getBody());
 				if (!jsonObj.isNull("titles")) {
 					JSONArray titleArray = jsonObj.getJSONArray("titles");
+					// only get non-empty title
 					for (int i = 0; i < titleArray.length(); i++) {
-						titles.add(titleArray.getString(i));
+						String title = titleArray.getString(i);
+						if (!title.isEmpty()) {
+							titles.add(title);
+						}
 					}
 				}
 			} catch (JSONException e) {
@@ -100,12 +106,15 @@ public class CreateGroups implements CustomCodeMethod {
 			// - build query
 			List<SMCondition> userQuery = new ArrayList<SMCondition>();
 			userQuery.add(new SMEquals("username", userId));
+			// - build result filter
+			List<String> fields = new ArrayList<String>();
+			fields.add("group_order");
+			ResultFilters filter = new ResultFilters(0, -1, null, fields);
 			// - execute query
 			List<SMObject> users = dataService.readObjects("user", userQuery);
 			if (users != null && users.size() == 1) {
 				SMObject userObject = users.get(0);
-				List<String> groupIds = new ArrayList<String>();
-				String addedGroupOrder = "";
+				List<SMString> groupIdList = new ArrayList<SMString>();
 				for (int i = 0; i < titles.size(); i++) {
 					String title = titles.get(i);
 					// create a new group
@@ -114,36 +123,33 @@ public class CreateGroups implements CustomCodeMethod {
 					groupMap.put("title", new SMString(title));
 					groupMap.put("relationship_order", new SMString(""));
 					SMObject groupObject = dataService.createObject("group", new SMObject(groupMap));
+					// get the new group id
 					SMString groupId = (SMString)groupObject.getValue().get("group_id");
-					
-					// add group in user's groups
-					List<SMString> groupIdList = new ArrayList<SMString>();
+					// store group id for adding in user's groups (and change group order)
 					groupIdList.add(groupId);
-					dataService.addRelatedObjects("user", userId, "groups", groupIdList);
-					
 					// add user as group's owner
 					List<SMString> ownerIdList = new ArrayList<SMString>();
 					ownerIdList.add(userId);
 					dataService.addRelatedObjects("group", groupId, "owner", ownerIdList);
-					
-					// add group id to group order
-					addedGroupOrder = addedGroupOrder + groupId.getValue() + "|";
-					
-					groupIds.add(groupId.getValue());
 				}
-				// update user's group order
+				dataService.addRelatedObjects("user", userId, "groups", groupIdList);
+				// update user's group order & groups mod date
 				List<SMUpdate> userUpdates = new ArrayList<SMUpdate>();
 				if (userObject.getValue().containsKey("group_order")) {
-					String groupOrder = ((SMString)userObject.getValue().get("group_order")).getValue();
-					userUpdates.add(new SMSet("group_order", new SMString(groupOrder + addedGroupOrder)));
+					List<SMString> groupOrder = ((SMList<SMString>)userObject.getValue().get("group_order")).getValue();
+					groupOrder.addAll(groupIdList);
+					userUpdates.add(new SMSet("group_order", new SMList<SMString>(groupOrder)));
 				} else {
-					userUpdates.add(new SMSet("group_order", new SMString(addedGroupOrder)));
+					userUpdates.add(new SMSet("group_order", new SMList<SMString>(groupIdList)));
 				}
+				long currentTime = System.currentTimeMillis();
+				userUpdates.add(new SMSet("groups_mod_date", new SMInt(currentTime)));
 				dataService.updateObject("user", userId, userUpdates);
 				
 				// return created group data for local database
 				Map<String, Object> returnMap = new HashMap<String, Object>();
-				returnMap.put("group_ids", groupIds);
+				returnMap.put("new_group_ids", groupIdList);
+				returnMap.put("groups_mod_date", new Long(currentTime));
 				return new ResponseToProcess(HttpURLConnection.HTTP_OK, returnMap);
 			} else {
 				// TO DO:
