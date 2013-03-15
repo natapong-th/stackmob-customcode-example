@@ -157,7 +157,7 @@ public class UpdateRelationships implements CustomCodeMethod {
 								eventMap.put("type", new SMInt(2L));
 								SMObject eventObject = dataService.createObject("event", new SMObject(eventMap));
 								// get the new event id
-								SMString eventId = (SMString)relObject.getValue().get("relationship_id");
+								SMString eventId = (SMString)eventObject.getValue().get("event_id");
 								// add event in relationship's events_by_owner
 								List<SMString> joinEventIdList = new ArrayList<SMString>();
 								joinEventIdList.add(eventId);

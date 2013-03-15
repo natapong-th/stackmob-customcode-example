@@ -234,7 +234,7 @@ public class CreateRelationships implements CustomCodeMethod {
 						eventMap.put("type", new SMInt(1L));
 						SMObject eventObject = dataService.createObject("event", new SMObject(eventMap));
 						// get the new event id
-						SMString eventId = (SMString)relObject.getValue().get("relationship_id");
+						SMString eventId = (SMString)eventObject.getValue().get("event_id");
 						// add event in relationship's events_by_owner
 						List<SMString> eventIdList = new ArrayList<SMString>();
 						eventIdList.add(eventId);
@@ -282,7 +282,7 @@ public class CreateRelationships implements CustomCodeMethod {
 						eventMap.put("type", new SMInt(1L));
 						SMObject eventObject = dataService.createObject("event", new SMObject(eventMap));
 						// get the new event id
-						SMString eventId = (SMString)relObject.getValue().get("relationship_id");
+						SMString eventId = (SMString)eventObject.getValue().get("event_id");
 						// add event in relationship's events_by_owner
 						List<SMString> eventIdList = new ArrayList<SMString>();
 						eventIdList.add(eventId);
