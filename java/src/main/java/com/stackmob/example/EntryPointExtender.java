@@ -35,6 +35,8 @@ public class EntryPointExtender extends JarEntryObject {
 	list.add(new UpdateGroup());
 	list.add(new DeleteGroup());
 	list.add(new DeleteEvent());
+	list.add(new CreateStatusRequest());
+	list.add(new UpdateInvites());
     return list;
   }
 
