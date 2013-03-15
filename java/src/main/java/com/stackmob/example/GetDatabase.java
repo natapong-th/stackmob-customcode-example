@@ -119,6 +119,7 @@ public class GetDatabase implements CustomCodeMethod {
 			fields.add("relationships_by_user.receiver.status_mod_date");
 			// -- 2.2. relationships by user's events
 			fields.add("relationships_by_user.events_by_receiver");
+			fields.add("relationships_by_user.events_by_receiver.event_id");
 			fields.add("relationships_by_user.events_by_receiver.type");
 			fields.add("relationships_by_user.events_by_receiver.createddate");
 			// -- 3. relationships by others
@@ -139,6 +140,7 @@ public class GetDatabase implements CustomCodeMethod {
 			fields.add("relationships_by_others.owner.status_mod_date");
 			// -- 3.2. relationships by others' events
 			fields.add("relationships_by_others.events_by_owner");
+			fields.add("relationships_by_others.events_by_owner.event_id");
 			fields.add("relationships_by_others.events_by_owner.type");
 			fields.add("relationships_by_others.events_by_owner.createddate");
 			// -- 4. groups

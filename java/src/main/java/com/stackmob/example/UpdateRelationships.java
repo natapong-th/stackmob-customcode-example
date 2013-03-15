@@ -33,6 +33,7 @@ import java.util.Map;
 import java.util.Arrays;
 import java.lang.String;
 import java.lang.Long;
+import java.lang.System;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -126,6 +127,8 @@ public class UpdateRelationships implements CustomCodeMethod {
 			List<SMObject> rels = dataService.readObjects("relationship", relQuery, 1, filter);
 			if (rels != null && rels.size() == relIds.size()) {
 				List<SMString> foundRelIds = new ArrayList<SMString>();
+				List<SMString> removedEventIds = new ArrayList<SMString>();
+				boolean groupChange = false;
 				for (int i = 0; i < rels.size(); i++) {
 					SMObject relObject = rels.get(i);
 					SMString relId = (SMString)relObject.getValue().get("relationship_id");
@@ -170,10 +173,16 @@ public class UpdateRelationships implements CustomCodeMethod {
 								if (relObject.getValue().containsKey("events_by_owner")) {
 									SMList<SMString> events = (SMList<SMString>)relObject.getValue().get("events_by_owner");
 									dataService.removeRelatedObjects("relationship", relId, "events_by_owner", events, true);
+									if (userRole.equals("receiver")) {
+										removedEventIds.addAll(events.getValue());
+									}
 								}
 								if (relObject.getValue().containsKey("events_by_receiver")) {
 									SMList<SMString> events = (SMList<SMString>)relObject.getValue().get("events_by_receiver");
 									dataService.removeRelatedObjects("relationship", relId, "events_by_receiver", events, true);
+									if (userRole.equals("owner")) {
+										removedEventIds.addAll(events.getValue());
+									}
 								}
 							}
 							// if type changes from friend to block or delete, remove this relationship from all groups
@@ -205,6 +214,7 @@ public class UpdateRelationships implements CustomCodeMethod {
 										}
 										if (groupUpdates.size() > 0) {
 											dataService.updateObject("group", groupId, groupUpdates);
+											groupChange = true;
 										}
 									}
 									// remove groups from relationship's groups by user
@@ -220,9 +230,18 @@ public class UpdateRelationships implements CustomCodeMethod {
 						}
 					}
 				}
-				// return updated data for local database
 				Map<String, Object> returnMap = new HashMap<String, Object>();
+				// if there is a group change, update groups mod date (only when type is changed from friend to block or delete)
+				if (groupChange) {
+					List<SMUpdate> userUpdates = new ArrayList<SMUpdate>();
+					long currentTime = System.currentTimeMillis();
+					userUpdates.add(new SMSet("groups_mod_date", new SMInt(currentTime)));
+					dataService.updateObject("user", userId, userUpdates);
+					returnMap.put("groups_mod_date", new Long(currentTime));
+				}
+				// return updated data for local database
 				returnMap.put("relationship_ids", foundRelIds);
+				returnMap.put("removed_events", removedEventIds);
 				return new ResponseToProcess(HttpURLConnection.HTTP_OK, returnMap);
 			} else {
 				// TO DO:

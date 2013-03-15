@@ -140,9 +140,21 @@ public class UpdateUser implements CustomCodeMethod {
 			}
 			if (newAction) fields.add("action");
 			if (newPlace) fields.add("place");
+			if (newAction || newPlace) {
+				fields.add("relationships_by_user");
+				fields.add("relationships_by_user.relationship_id");
+				fields.add("relationships_by_user.events_by_receiver");
+				fields.add("relationships_by_user.events_by_receiver.event_id");
+				fields.add("relationships_by_user.events_by_receiver.type");
+				fields.add("relationships_by_others");
+				fields.add("relationships_by_others.relationship_id");
+				fields.add("relationships_by_others.events_by_owner");
+				fields.add("relationships_by_others.events_by_owner.event_id");
+				fields.add("relationships_by_others.events_by_owner.type");
+			}
 			ResultFilters filter = new ResultFilters(0, -1, null, fields);
 			// - execute query
-			List<SMObject> users = dataService.readObjects("user", userQuery, 0, filter);
+			List<SMObject> users = dataService.readObjects("user", userQuery, 2, filter);
 			if (users != null && users.size() == 1) {
 				SMObject userObject = users.get(0);
 				Map<String, Object> returnMap = new HashMap<String, Object>();
@@ -426,8 +438,6 @@ public class UpdateUser implements CustomCodeMethod {
 								newPlace = false; // ignore custom place change
 							}
 						}
-						
-						
 					}
 				}
 				// 6. change place
@@ -439,11 +449,66 @@ public class UpdateUser implements CustomCodeMethod {
 						statusChanged = true;
 					}
 				}
-				// 7. update status mod date if status is changed
+				// 7. change status mod date if status is changed
 				if (statusChanged) {
 					long currentTime = System.currentTimeMillis();
 					userUpdates.add(new SMSet("status_mod_date", new SMInt(currentTime)));
 					returnMap.put("status_mod_date", new Long(currentTime));
+					// remove all status update request events
+					List<SMString> removedEventList = new ArrayList<SMString>();
+					// - relationships by user
+					List<SMObject> relList = new ArrayList<SMObject>();
+					if (userObject.getValue().containsKey("relationships_by_user")) {
+						SMList<SMObject> relListValue = (SMList<SMObject>)userObject.getValue().get("relationships_by_user");
+						relList = relListValue.getValue();
+					}
+					for (int i = 0; i < relList.size(); i++) {
+						SMObject relObject = relList.get(i);
+						List<SMObject> eventList = new ArrayList<SMObject>();
+						if (relObject.getValue().containsKey("events_by_receiver")) {
+							SMList<SMObject> eventListValue = (SMList<SMObject>)relObject.getValue().get("events_by_receiver");
+							eventList = eventListValue.getValue();
+						}
+						List<SMString> statReqList = new ArrayList<SMString>();
+						for (int j = 0; j < eventList.size(); j++) {
+							SMObject eventObject = eventList.get(i);
+							SMInt eventType = (SMInt)eventObject.getValue().get("type");
+							if (eventType.getValue().longValue() == 3L) {
+								SMString eventId = (SMString)eventObject.getValue().get("event_id");
+								statReqList.add(eventId);
+								removedEventList.add(eventId);
+							}
+						}
+						SMString relId = (SMString)relObject.getValue().get("relationship_id");
+						dataService.removeRelatedObjects("relationship", relId, "events_by_receiver", statReqList, true);
+					}
+					// - relationships by others
+					relList = new ArrayList<SMObject>();
+					if (userObject.getValue().containsKey("relationships_by_others")) {
+						SMList<SMObject> relListValue = (SMList<SMObject>)userObject.getValue().get("relationships_by_others");
+						relList = relListValue.getValue();
+					}
+					for (int i = 0; i < relList.size(); i++) {
+						SMObject relObject = relList.get(i);
+						List<SMObject> eventList = new ArrayList<SMObject>();
+						if (relObject.getValue().containsKey("events_by_owner")) {
+							SMList<SMObject> eventListValue = (SMList<SMObject>)relObject.getValue().get("events_by_owner");
+							eventList = eventListValue.getValue();
+						}
+						List<SMString> statReqList = new ArrayList<SMString>();
+						for (int j = 0; j < eventList.size(); j++) {
+							SMObject eventObject = eventList.get(i);
+							SMInt eventType = (SMInt)eventObject.getValue().get("type");
+							if (eventType.getValue().longValue() == 3L) {
+								SMString eventId = (SMString)eventObject.getValue().get("event_id");
+								statReqList.add(eventId);
+								removedEventList.add(eventId);
+							}
+						}
+						SMString relId = (SMString)relObject.getValue().get("relationship_id");
+						dataService.removeRelatedObjects("relationship", relId, "events_by_owner", statReqList, true);
+					}
+					returnMap.put("removed_events", removedEventList);
 				}
 				// update user (only if there is one)
 				if (userUpdates.size() > 0) {
