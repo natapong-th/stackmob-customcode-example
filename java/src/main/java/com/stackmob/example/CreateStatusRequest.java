@@ -131,27 +131,45 @@ public class CreateStatusRequest implements CustomCodeMethod {
 					errParams.put("error", "requested relationship is inaccessible by this user");
 					return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
 				}
+				
+				Map<String, Object> returnMap = new HashMap<String, Object>();
 				// only allow to request mutual friends (do not inform user)
 				SMInt typeOwner = (SMInt)relObject.getValue().get("type_by_owner");
 				SMInt typeReceiver = (SMInt)relObject.getValue().get("type_by_receiver");
 				if (typeOwner.getValue().longValue() == 2L && typeReceiver.getValue().longValue() == 2L) {
-					Map<String, SMValue> eventMap = new HashMap<String, SMValue>();
-					eventMap.put("sm_owner", new SMString("user/" + username));
-					eventMap.put("type", new SMInt(3L));
-					SMObject eventObject = dataService.createObject("event", new SMObject(eventMap));
-					// get the new event id
-					SMString eventId = (SMString)eventObject.getValue().get("relationship_id");
-					// add event in relationship's events_by_owner
-					List<SMString> eventIdList = new ArrayList<SMString>();
-					eventIdList.add(eventId);
-					dataService.addRelatedObjects("relationship", relId, "events_by_" + userRole, eventIdList);
-					// add relationship as event's relationship
-					List<SMString> relIdList = new ArrayList<SMString>();
-					relIdList.add(relId);
-					dataService.addRelatedObjects("event", eventId, "relationship_by_" + userRole, relIdList);
+					// check if this relationship already have a request event
+					SMList<SMObject> eventsValue = (SMList<SMObject>)relObject.getValue().get("events_by_" + userRole);
+					List<SMObject> events = eventsValue.getValue();
+					boolean found = false;
+					for (int i = 0; i < events.size(); i++) {
+						SMObject eventObject = events.get(i);
+						SMInt eventType = (SMInt)eventObject.getValue().get("type")
+						if (eventType.longValue() == 3L) {
+							found = true;
+							break;
+						}
+					}
+					
+					if (!found) {
+						Map<String, SMValue> eventMap = new HashMap<String, SMValue>();
+						eventMap.put("sm_owner", new SMString("user/" + username));
+						eventMap.put("type", new SMInt(3L));
+						SMObject eventObject = dataService.createObject("event", new SMObject(eventMap));
+						// get the new event id
+						SMString eventId = (SMString)eventObject.getValue().get("relationship_id");
+						// add event in relationship's events by user
+						List<SMString> eventIdList = new ArrayList<SMString>();
+						eventIdList.add(eventId);
+						dataService.addRelatedObjects("relationship", relId, "events_by_" + userRole, eventIdList);
+						// add relationship as event's relationship
+						List<SMString> relIdList = new ArrayList<SMString>();
+						relIdList.add(relId);
+						dataService.addRelatedObjects("event", eventId, "relationship_by_" + userRole, relIdList);
+						
+						returnMap.put("event_id", eventId); 
+					}
 				}
 				// return updated data for local database
-				Map<String, Object> returnMap = new HashMap<String, Object>();
 				return new ResponseToProcess(HttpURLConnection.HTTP_OK, returnMap);
 			} else {
 				// TO DO:
