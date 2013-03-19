@@ -72,21 +72,11 @@ public class DeleteEvent implements CustomCodeMethod {
 		
 		// get update parameters
 		String eventIdString = "";
-		if (!request.getBody().isEmpty()) {
-			try {
-				JSONObject jsonObj = new JSONObject(request.getBody());
-				if (!jsonObj.isNull("event_id")) {
-					eventIdString = jsonObj.getString("event_id");
-				}
-			} catch (JSONException e) {
-				HashMap<String, String> errParams = new HashMap<String, String>();
-				errParams.put("error", "invalid request body");
-				return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
-			}
-		}
-		if (eventIdString.isEmpty()) {
+		try {
+			eventIdString = request.getParams().get("event_id");
+		} catch (Exception e) {
 			HashMap<String, String> errParams = new HashMap<String, String>();
-			errParams.put("error", "invalid parameters");
+			errParams.put("error", "invalid request parameter");
 			return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
 		}
 		SMString eventId = new SMString(eventIdString);

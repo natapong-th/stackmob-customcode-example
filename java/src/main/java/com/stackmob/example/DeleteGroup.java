@@ -72,21 +72,11 @@ public class DeleteGroup implements CustomCodeMethod {
 		
 		// get update parameters
 		String groupIdString = "";
-		if (!request.getBody().isEmpty()) {
-			try {
-				JSONObject jsonObj = new JSONObject(request.getBody());
-				if (!jsonObj.isNull("group_id")) {
-					groupIdString = jsonObj.getString("group_id");
-				}
-			} catch (JSONException e) {
-				HashMap<String, String> errParams = new HashMap<String, String>();
-				errParams.put("error", "invalid request body");
-				return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
-			}
-		}
-		if (groupIdString.isEmpty()) {
+		try {
+			groupIdString = request.getParams().get("group_id");
+		} catch (Exception e) {
 			HashMap<String, String> errParams = new HashMap<String, String>();
-			errParams.put("error", "invalid parameters");
+			errParams.put("error", "invalid request parameter");
 			return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
 		}
 		SMString groupId = new SMString(groupIdString);

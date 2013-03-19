@@ -121,7 +121,6 @@ public class CreateGroups implements CustomCodeMethod {
 					Map<String, SMValue> groupMap = new HashMap<String, SMValue>();
 					groupMap.put("sm_owner", new SMString("user/" + username));
 					groupMap.put("title", new SMString(title));
-					groupMap.put("relationship_order", new SMString(""));
 					SMObject groupObject = dataService.createObject("group", new SMObject(groupMap));
 					// get the new group id
 					SMString groupId = (SMString)groupObject.getValue().get("group_id");
