@@ -143,8 +143,8 @@ public class CreateStatusRequest implements CustomCodeMethod {
 					boolean found = false;
 					for (int i = 0; i < events.size(); i++) {
 						SMObject eventObject = events.get(i);
-						SMInt eventType = (SMInt)eventObject.getValue().get("type")
-						if (eventType.longValue() == 3L) {
+						SMInt eventType = (SMInt)eventObject.getValue().get("type");
+						if (eventType.getValue().longValue() == 3L) {
 							found = true;
 							break;
 						}
