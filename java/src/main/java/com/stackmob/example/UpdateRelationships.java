@@ -125,133 +125,127 @@ public class UpdateRelationships implements CustomCodeMethod {
 			ResultFilters filter = new ResultFilters(0, -1, null, fields);
 			// - execute query
 			List<SMObject> rels = dataService.readObjects("relationship", relQuery, 1, filter);
-			if (rels != null && rels.size() == relIds.size()) {
-				List<SMString> foundRelIds = new ArrayList<SMString>();
-				List<SMString> removedEventIds = new ArrayList<SMString>();
-				boolean groupChange = false;
-				for (int i = 0; i < rels.size(); i++) {
-					SMObject relObject = rels.get(i);
-					SMString relId = (SMString)relObject.getValue().get("relationship_id");
-					// find user's role in this relationship
-					SMString ownerId = (SMString)relObject.getValue().get("owner");
-					String userRole = "";
-					if (ownerId.equals(userId)) {
-						userRole = "owner";
-					} else if (relObject.getValue().containsKey("receiver")) {
-						SMString receiverId = (SMString)relObject.getValue().get("receiver");
-						if (receiverId.equals(userId)) {
-							userRole = "receiver";
-						}
-					}
-					// if user is in this relationship, change its type by user
-					if (!userRole.isEmpty()) {
-						String typeUserKey = "type_by_" + userRole;
-						SMInt typeUser = (SMInt)relObject.getValue().get(typeUserKey);
-						if (typeUser.getValue().longValue() != type) {
-							// if type changes from no response to accepted, create a friend accept event (only if you're not blocked/deleted)
-							String typeOtherKey = "type_by_" + (userRole.equals("owner") ? "receiver" : "owner");
-							SMInt typeOther = (SMInt)relObject.getValue().get(typeOtherKey);
-							if (type == 2L && typeUser.getValue().longValue() == 1L && typeOther.getValue().longValue() == 2L) {
-								Map<String, SMValue> eventMap = new HashMap<String, SMValue>();
-								eventMap.put("sm_owner", new SMString("user/" + username));
-								eventMap.put("type", new SMInt(2L));
-								SMObject eventObject = dataService.createObject("event", new SMObject(eventMap));
-								// get the new event id
-								SMString eventId = (SMString)eventObject.getValue().get("event_id");
-								// add event in relationship's events_by_owner
-								List<SMString> joinEventIdList = new ArrayList<SMString>();
-								joinEventIdList.add(eventId);
-								dataService.addRelatedObjects("relationship", relId, "events_by_" + userRole, joinEventIdList);
-								// add relationship as event's relationship
-								List<SMString> relIdList = new ArrayList<SMString>();
-								relIdList.add(relId);
-								dataService.addRelatedObjects("event", eventId, "relationship_by_" + userRole, relIdList);
-							}
-							// if type changes to block or delete, remove all events from both sides
-							// no need to remove if any of the types is already block or delete
-							if (type >= 3L && typeUser.getValue().longValue() < 3L && typeOther.getValue().longValue() < 3L) {
-								if (relObject.getValue().containsKey("events_by_owner")) {
-									SMList<SMString> events = (SMList<SMString>)relObject.getValue().get("events_by_owner");
-									dataService.removeRelatedObjects("relationship", relId, "events_by_owner", events, true);
-									if (userRole.equals("receiver")) {
-										removedEventIds.addAll(events.getValue());
-									}
-								}
-								if (relObject.getValue().containsKey("events_by_receiver")) {
-									SMList<SMString> events = (SMList<SMString>)relObject.getValue().get("events_by_receiver");
-									dataService.removeRelatedObjects("relationship", relId, "events_by_receiver", events, true);
-									if (userRole.equals("owner")) {
-										removedEventIds.addAll(events.getValue());
-									}
-								}
-							}
-							// if type changes from friend to block or delete, remove this relationship from all groups
-							if (type >= 3L && typeUser.getValue().longValue() < 3L) {
-								String groupKey = "groups_by_" + userRole;
-								if (relObject.getValue().containsKey(groupKey)) {
-									SMList<SMObject> groupsValue = (SMList<SMObject>)relObject.getValue().get(groupKey);
-									List<SMObject> groupsList = groupsValue.getValue();
-									// remove relationship from each group's relationships by user
-									List<SMString> relIdList = new ArrayList<SMString>();
-									relIdList.add(relId);
-									String relKey = "relationships_by_" + (userRole.equals("owner") ? "owner" : "others");
-									List<SMString> groupIdList = new ArrayList<SMString>();
-									for (int j = 0; j < groupsList.size(); j++) {
-										SMObject groupObject = groupsList.get(j);
-										SMString groupId = (SMString)groupObject.getValue().get("group_id");
-										dataService.removeRelatedObjects("group", groupId, relKey, relIdList, false);
-										groupIdList.add(groupId);
-										// remove from group's relationship order as well
-										SMList<SMString> relOrderValue = (SMList<SMString>)groupObject.getValue().get("relationship_order");
-										List<SMString> relOrder = relOrderValue.getValue();
-										List<SMUpdate> groupUpdates = new ArrayList<SMUpdate>();
-										for (int k = 0; k < relOrder.size(); k++) {
-											if (relOrder.get(k).equals(relId)) {
-												relOrder.remove(k);
-												groupUpdates.add(new SMSet("relationship_order", new SMList<SMString>(relOrder)));
-												break;
-											}
-										}
-										if (groupUpdates.size() > 0) {
-											dataService.updateObject("group", groupId, groupUpdates);
-											groupChange = true;
-										}
-									}
-									// remove groups from relationship's groups by user
-									dataService.removeRelatedObjects("relationship", relId, groupKey, groupIdList, false);
-								}
-							}
-							// update type by user
-							List<SMUpdate> relUpdates = new ArrayList<SMUpdate>();
-							relUpdates.add(new SMSet(typeUserKey, new SMInt(type)));
-							dataService.updateObject("relationship", relId, relUpdates);
-							
-							foundRelIds.add(relId);
-						}
-					}
-				}
-				Map<String, Object> returnMap = new HashMap<String, Object>();
-				// if there is a group change, update groups mod date (only when type is changed from friend to block or delete)
-				if (groupChange) {
-					List<SMUpdate> userUpdates = new ArrayList<SMUpdate>();
-					long currentTime = System.currentTimeMillis();
-					userUpdates.add(new SMSet("groups_mod_date", new SMInt(currentTime)));
-					dataService.updateObject("user", userId, userUpdates);
-					returnMap.put("groups_mod_date", new Long(currentTime));
-				}
-				// return updated data for local database
-				returnMap.put("relationship_ids", foundRelIds);
-				returnMap.put("removed_events", removedEventIds);
-				return new ResponseToProcess(HttpURLConnection.HTTP_OK, returnMap);
-			} else {
-				// TO DO:
-				// handle relationship fetch error
-				
+			// report error if query failed
+			if (rels == null || rels.size() != relIds.size()) {
 				HashMap<String, String> errMap = new HashMap<String, String>();
 				errMap.put("error", "invalid relationship fetch");
 				errMap.put("detail", (rels == null ? "null fetch result" : ("fetch result count = " + rels.size())));
 				return new ResponseToProcess(HttpURLConnection.HTTP_INTERNAL_ERROR, errMap);
 			}
+			
+			Map<String, Object> returnMap = new HashMap<String, Object>();
+			List<SMString> foundRelIds = new ArrayList<SMString>();
+			List<SMString> removedEventIds = new ArrayList<SMString>();
+			boolean groupChange = false;
+			for (int i = 0; i < rels.size(); i++) {
+				SMObject relObject = rels.get(i);
+				SMString relId = (SMString)relObject.getValue().get("relationship_id");
+				// find user's role in this relationship
+				SMString ownerId = (SMString)relObject.getValue().get("owner");
+				String userRole = "";
+				if (ownerId.equals(userId)) {
+					userRole = "owner";
+				} else if (relObject.getValue().containsKey("receiver")) {
+					SMString receiverId = (SMString)relObject.getValue().get("receiver");
+					if (receiverId.equals(userId)) {
+						userRole = "receiver";
+					}
+				}
+				// if user is in this relationship, change its type by user
+				if (!userRole.isEmpty()) {
+					String typeUserKey = "type_by_" + userRole;
+					SMInt typeUser = (SMInt)relObject.getValue().get(typeUserKey);
+					if (typeUser.getValue().longValue() != type) {
+						// if type changes from no response to accepted, create a friend accept event (only if you're not blocked/deleted)
+						String typeOtherKey = "type_by_" + (userRole.equals("owner") ? "receiver" : "owner");
+						SMInt typeOther = (SMInt)relObject.getValue().get(typeOtherKey);
+						if (type == 2L && typeUser.getValue().longValue() == 1L && typeOther.getValue().longValue() == 2L) {
+							Map<String, SMValue> eventMap = new HashMap<String, SMValue>();
+							eventMap.put("sm_owner", new SMString("user/" + username));
+							eventMap.put("type", new SMInt(2L));
+							SMObject eventObject = dataService.createObject("event", new SMObject(eventMap));
+							// get the new event id
+							SMString eventId = (SMString)eventObject.getValue().get("event_id");
+							// add event in relationship's events_by_owner
+							List<SMString> joinEventIdList = new ArrayList<SMString>();
+							joinEventIdList.add(eventId);
+							dataService.addRelatedObjects("relationship", relId, "events_by_" + userRole, joinEventIdList);
+							// add relationship as event's relationship
+							List<SMString> relIdList = new ArrayList<SMString>();
+							relIdList.add(relId);
+							dataService.addRelatedObjects("event", eventId, "relationship_by_" + userRole, relIdList);
+						}
+						// if type changes to block or delete, remove all events from both sides
+						// no need to remove if any of the types is already block or delete
+						if (type >= 3L && typeUser.getValue().longValue() < 3L && typeOther.getValue().longValue() < 3L) {
+							if (relObject.getValue().containsKey("events_by_owner")) {
+								SMList<SMString> events = (SMList<SMString>)relObject.getValue().get("events_by_owner");
+								dataService.removeRelatedObjects("relationship", relId, "events_by_owner", events, true);
+								if (userRole.equals("receiver")) {
+									removedEventIds.addAll(events.getValue());
+								}
+							}
+							if (relObject.getValue().containsKey("events_by_receiver")) {
+								SMList<SMString> events = (SMList<SMString>)relObject.getValue().get("events_by_receiver");
+								dataService.removeRelatedObjects("relationship", relId, "events_by_receiver", events, true);
+								if (userRole.equals("owner")) {
+									removedEventIds.addAll(events.getValue());
+								}
+							}
+						}
+						// if type changes from friend to block or delete, remove this relationship from all groups
+						if (type >= 3L && typeUser.getValue().longValue() < 3L) {
+							String groupKey = "groups_by_" + userRole;
+							if (relObject.getValue().containsKey(groupKey)) {
+								SMList<SMObject> groupsValue = (SMList<SMObject>)relObject.getValue().get(groupKey);
+								List<SMObject> groupsList = groupsValue.getValue();
+								// remove relationship from each group's relationships by user
+								List<SMString> relIdList = new ArrayList<SMString>();
+								relIdList.add(relId);
+								String relKey = "relationships_by_" + (userRole.equals("owner") ? "owner" : "others");
+								List<SMString> groupIdList = new ArrayList<SMString>();
+								for (int j = 0; j < groupsList.size(); j++) {
+									SMObject groupObject = groupsList.get(j);
+									SMString groupId = (SMString)groupObject.getValue().get("group_id");
+									dataService.removeRelatedObjects("group", groupId, relKey, relIdList, false);
+									groupIdList.add(groupId);
+									// remove from group's relationship order as well
+									SMList<SMString> relOrderValue = (SMList<SMString>)groupObject.getValue().get("relationship_order");
+									List<SMString> relOrder = relOrderValue.getValue();
+									if (relOrder.contains(relId)) {
+										relOrder.remove(relId);
+										List<SMUpdate> groupUpdates = new ArrayList<SMUpdate>();
+										groupUpdates.add(new SMSet("relationship_order", new SMList<SMString>(relOrder)));
+										dataService.updateObject("group", groupId, groupUpdates);
+									}
+								}
+								// remove groups from relationship's groups by user
+								dataService.removeRelatedObjects("relationship", relId, groupKey, groupIdList, false);
+								groupChange = true;
+							}
+						}
+						// update type by user
+						List<SMUpdate> relUpdates = new ArrayList<SMUpdate>();
+						relUpdates.add(new SMSet(typeUserKey, new SMInt(type)));
+						dataService.updateObject("relationship", relId, relUpdates);
+						
+						foundRelIds.add(relId);
+					}
+				}
+			}
+			
+			long currentTime = System.currentTimeMillis();
+			// if there is a group change, update groups mod date (only when type is changed from friend to block or delete)
+			if (groupChange) {
+				List<SMUpdate> userUpdates = new ArrayList<SMUpdate>();
+				userUpdates.add(new SMSet("groups_mod_date", new SMInt(currentTime)));
+				dataService.updateObject("user", userId, userUpdates);
+			}
+			// return updated data for local database
+			returnMap.put("relationship_ids", foundRelIds);
+			returnMap.put("removed_events", removedEventIds);
+			returnMap.put("last_sync_date", new Long(currentTime));
+			return new ResponseToProcess(HttpURLConnection.HTTP_OK, returnMap);
 		} catch (InvalidSchemaException e) {
 			HashMap<String, String> errMap = new HashMap<String, String>();
 			errMap.put("error", "invalid_schema");

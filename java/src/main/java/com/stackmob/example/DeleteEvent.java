@@ -101,42 +101,42 @@ public class DeleteEvent implements CustomCodeMethod {
 			ResultFilters filter = new ResultFilters(0, -1, null, fields);
 			// - execute query
 			List<SMObject> events = dataService.readObjects("event", eventQuery, 1, filter);
-			if (events != null && events.size() == 1) {
-				SMObject eventObject = events.get(0);
-				// find event user's role
-				String userRole = "owner";
-				String creatorRole = "receiver";
-				if (eventObject.getValue().containsKey("relationship_by_owner")) {
-					userRole = "receiver";
-					creatorRole = "owner";
-				}
-				// check if this user is the receiver of this event
-				SMObject relObject = (SMObject)eventObject.getValue().get("relationship_by_" + creatorRole);
-				SMString relId = (SMString)relObject.getValue().get("relationship_id");
-				SMString receiverId = (SMString)relObject.getValue().get(userRole);
-				if (!receiverId.equals(userId)) {
-					HashMap<String, String> errParams = new HashMap<String, String>();
-					errParams.put("error", "requested events are inaccessible by this user");
-					return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
-				}
-				// remove & delete the event from the relationship
-				List<SMString> eventIdList = new ArrayList<SMString>();
-				eventIdList.add(eventId);
-				dataService.removeRelatedObjects("relationship", relId, "events_by_" + creatorRole, eventIdList, true);
-				
-				// return updated data for local database
-				Map<String, Object> returnMap = new HashMap<String, Object>();
-				returnMap.put("relationship_id", relId);
-				return new ResponseToProcess(HttpURLConnection.HTTP_OK, returnMap);
-			} else {
-				// TO DO:
-				// handle event fetch error
-				
+			// report error if query failed
+			if (events == null || events.size() != 1) {
 				HashMap<String, String> errMap = new HashMap<String, String>();
 				errMap.put("error", "invalid group fetch");
 				errMap.put("detail", (events == null ? "null fetch result" : ("fetch result count = " + events.size())));
 				return new ResponseToProcess(HttpURLConnection.HTTP_INTERNAL_ERROR, errMap);
 			}
+			
+			SMObject eventObject = events.get(0);
+			// find event user's role
+			String userRole = "owner";
+			String creatorRole = "receiver";
+			if (eventObject.getValue().containsKey("relationship_by_owner")) {
+				userRole = "receiver";
+				creatorRole = "owner";
+			}
+			// check if this user is the receiver of this event
+			SMObject relObject = (SMObject)eventObject.getValue().get("relationship_by_" + creatorRole);
+			SMString relId = (SMString)relObject.getValue().get("relationship_id");
+			SMString receiverId = (SMString)relObject.getValue().get(userRole);
+			if (!receiverId.equals(userId)) {
+				HashMap<String, String> errParams = new HashMap<String, String>();
+				errParams.put("error", "requested events are inaccessible by this user");
+				return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
+			}
+			
+			Map<String, Object> returnMap = new HashMap<String, Object>();
+			// remove & delete the event from the relationship
+			List<SMString> eventIdList = new ArrayList<SMString>();
+			eventIdList.add(eventId);
+			dataService.removeRelatedObjects("relationship", relId, "events_by_" + creatorRole, eventIdList, true);
+			
+			// return updated data for local database
+			long currentTime = System.currentTimeMillis();
+			returnMap.put("last_sync_date", new Long(currentTime));
+			return new ResponseToProcess(HttpURLConnection.HTTP_OK, returnMap);
 		} catch (InvalidSchemaException e) {
 			HashMap<String, String> errMap = new HashMap<String, String>();
 			errMap.put("error", "invalid_schema");
