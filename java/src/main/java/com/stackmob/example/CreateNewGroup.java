@@ -39,23 +39,23 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-public class UpdateGroup implements CustomCodeMethod {
+public class CreateNewGroup implements CustomCodeMethod {
 
 	@Override
 	public String getMethodName() {
-		return "update_group";
+		return "create_new_group";
 	}
 	
 	@Override
 	public List<String> getParams() {
-		return Arrays.asList("group_id", "title", "relationship_order", "block_ids", "delete_ids");
+		return Arrays.asList("title", "relationship_order", "block_ids", "delete_ids");
 	}
 	
 	@Override
 	public ResponseToProcess execute(ProcessedAPIRequest request, SDKServiceProvider serviceProvider) {
-		// only allow PUT method
+		// only allow POST method
 		String verb = request.getVerb().toString();
-		if (!verb.equalsIgnoreCase("put")) {
+		if (!verb.equalsIgnoreCase("post")) {
 			HashMap<String, String> errParams = new HashMap<String, String>();
 			errParams.put("error", "invalid method");
 			return new ResponseToProcess(HttpURLConnection.HTTP_BAD_METHOD, errParams); // http 405 - method not allowed
@@ -70,31 +70,23 @@ public class UpdateGroup implements CustomCodeMethod {
 		}
 		SMString userId = new SMString(username);
 		
-		// get update parameters
-		String groupIdString = "";
+		// get requested group titles
 		String title = "";
-		boolean newTitle = false;
 		List<SMString> relOrder = new ArrayList<SMString>();
-		boolean newOrder = false;
 		List<SMString> blockIds = new ArrayList<SMString>();
 		List<SMString> deleteIds = new ArrayList<SMString>();
 		if (!request.getBody().isEmpty()) {
 			try {
 				JSONObject jsonObj = new JSONObject(request.getBody());
-				if (!jsonObj.isNull("group_id")) {
-					groupIdString = jsonObj.getString("group_id");
-				}
 				if (!jsonObj.isNull("title")) {
 					title = jsonObj.getString("title");
-					newTitle = true;
 				}
-				if (!jsonObj.isNull("relationship_order")) {
+				if (!jsonObj.isNull("block_ids")) {
 					JSONArray relArray = jsonObj.getJSONArray("relationship_order");
 					for (int i = 0; i < relArray.length(); i++) {
 						String relId = relArray.getString(i);
 						relOrder.add(new SMString(relId));
 					}
-					newOrder = true;
 				}
 				if (!jsonObj.isNull("block_ids")) {
 					JSONArray relArray = jsonObj.getJSONArray("block_ids");
@@ -116,121 +108,72 @@ public class UpdateGroup implements CustomCodeMethod {
 				return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
 			}
 		}
-		if (groupIdString.isEmpty() || (!newTitle && !newOrder)) {
+		if (title.isEmpty()) {
 			HashMap<String, String> errParams = new HashMap<String, String>();
 			errParams.put("error", "invalid parameters");
 			return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
 		}
-		SMString groupId = new SMString(groupIdString);
 		
 		// get the datastore service
 		DataService dataService = serviceProvider.getDataService();
 		
 		// create a response
 		try {
-			// fetch group object
+			// fetch user object
 			// - build query
-			List<SMCondition> groupQuery = new ArrayList<SMCondition>();
-			groupQuery.add(new SMEquals("group_id", groupId));
+			List<SMCondition> userQuery = new ArrayList<SMCondition>();
+			userQuery.add(new SMEquals("username", userId));
 			// - build result filter
-			List<String> groupFields = new ArrayList<String>();
-			groupFields.add("title");
-			groupFields.add("relationship_order");
-			groupFields.add("owner");
-			groupFields.add("owner.username");
-			groupFields.add("owner.relationships_by_user");
-			groupFields.add("owner.relationships_by_others");
-			groupFields.add("relationships_by_owner");
-			groupFields.add("relationships_by_owner.relationship_id");
-			groupFields.add("relationships_by_others");
-			groupFields.add("relationships_by_others.relationship_id");
-			ResultFilters groupFilter = new ResultFilters(0, -1, null, groupFields);
+			List<String> userFields = new ArrayList<String>();
+			userFields.add("group_order");
+			userFields.add("relationships_by_user");
+			userFields.add("relationships_by_others");
+			ResultFilters userFilter = new ResultFilters(0, -1, null, userFields);
 			// - execute query
-			List<SMObject> groups = dataService.readObjects("group", groupQuery, 1, groupFilter);
+			List<SMObject> users = dataService.readObjects("user", userQuery, 0, userFilter);
 			// report error if query failed
-			if (groups == null || groups.size() != 1) {
+			if (users == null || users.size() != 1) {
 				HashMap<String, String> errMap = new HashMap<String, String>();
-				errMap.put("error", "invalid group fetch");
-				errMap.put("detail", (groups == null ? "null fetch result" : ("fetch result count = " + groups.size())));
+				errMap.put("error", "invalid user fetch");
+				errMap.put("detail", (users == null ? "null fetch result" : ("fetch result count = " + users.size())));
 				return new ResponseToProcess(HttpURLConnection.HTTP_INTERNAL_ERROR, errMap);
 			}
 			
-			SMObject groupObject = groups.get(0);
-			// check if this user is the owner
-			SMObject ownerObject = (SMObject)groupObject.getValue().get("owner");
-			SMString ownerId = (SMString)ownerObject.getValue().get("username");
-			if (!ownerId.equals(userId)) {
-				HashMap<String, String> errParams = new HashMap<String, String>();
-				errParams.put("error", "requested groups are inaccessible by this user");
-				return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
-			}
-			
 			Map<String, Object> returnMap = new HashMap<String, Object>();
-			List<SMUpdate> groupUpdates = new ArrayList<SMUpdate>();
-			// 1. change title
-			if (newTitle) {
-				groupUpdates.add(new SMSet("title", new SMString(title)));
-				returnMap.put("title", title);
-			}
-			// 2. change relationships
-			if (newOrder) {
-				List<SMString> foundList = new ArrayList<SMString>();
-				List<SMString> removeList = new ArrayList<SMString>();
+			SMObject userObject = users.get(0);
+			// 1. create a new group
+			Map<String, SMValue> groupMap = new HashMap<String, SMValue>();
+			groupMap.put("sm_owner", new SMString("user/" + username));
+			groupMap.put("title", new SMString(title));
+			SMObject groupObject = dataService.createObject("group", new SMObject(groupMap));
+			// get the new group id
+			SMString groupId = (SMString)groupObject.getValue().get("group_id");
+			// add group in user's groups
+			List<SMString> groupIdList = new ArrayList<SMString>();
+			groupIdList.add(groupId);
+			dataService.addRelatedObjects("user", userId, "groups", groupIdList);
+			// add user as group's owner
+			List<SMString> ownerIdList = new ArrayList<SMString>();
+			ownerIdList.add(userId);
+			dataService.addRelatedObjects("group", groupId, "owner", ownerIdList);
+			
+			returnMap.put("group_id", groupId);
+			
+			// 2. add relationships in relationship order to the group
+			// and remove non-existing relationship from the order
+			if (relOrder.size() > 0) {
 				List<SMString> addList = new ArrayList<SMString>();
 				List<SMString> newRelOrder = new ArrayList<SMString>(relOrder);
-				List<SMString> groupIdList = new ArrayList<SMString>();
-				groupIdList.add(groupId);
-				// 2.1. remove all relationships that are not in relationship order
-				// - relationships by owner
-				List<SMObject> relsOwner = new ArrayList<SMObject>();
-				if (groupObject.getValue().containsKey("relationships_by_owner")) {
-					relsOwner = ((SMList<SMObject>)groupObject.getValue().get("relationships_by_owner")).getValue();
-				}
-				List<SMString> tempRemoveList = new ArrayList<SMString>();
-				for (int i = 0; i < relsOwner.size(); i++) {
-					SMObject relObject = relsOwner.get(i);
-					SMString relId = (SMString)relObject.getValue().get("relationship_id");
-					if (relOrder.remove(relId)) {
-						foundList.add(relId);
-					} else {
-						dataService.removeRelatedObjects("relationship", relId, "groups_by_owner", groupIdList, false);
-						tempRemoveList.add(relId);
-						removeList.add(relId);
-					}
-				}
-				dataService.removeRelatedObjects("group", groupId, "relationships_by_owner", tempRemoveList, false);
-				// - relationships by others
-				List<SMObject> relsOthers = new ArrayList<SMObject>();
-				if (groupObject.getValue().containsKey("relationships_by_others")) {
-					relsOthers = ((SMList<SMObject>)groupObject.getValue().get("relationships_by_others")).getValue();
-				}
-				tempRemoveList = new ArrayList<SMString>();
-				for (int i = 0; i < relsOthers.size(); i++) {
-					SMObject relObject = relsOthers.get(i);
-					SMString relId = (SMString) relObject.getValue().get("relationship_id");
-					if (relOrder.remove(relId)) {
-						foundList.add(relId);
-					} else {
-						dataService.removeRelatedObjects("relationship", relId, "groups_by_receiver", groupIdList, false);
-						tempRemoveList.add(relId);
-						removeList.add(relId);
-					}
-				}
-				dataService.removeRelatedObjects("group", groupId, "relationships_by_others", tempRemoveList, false);
-				returnMap.put("unchanged_relationships", foundList);
-				returnMap.put("removed_relationships", removeList);
-				// 2.2. add relationships left in relationship order
-				//     and remove non-existing relationship from the order
 				// - all relationships by user
 				List<SMString> allRelsUser = new ArrayList<SMString>();
-				if (ownerObject.getValue().containsKey("relationships_by_user")) {
-					allRelsUser = ((SMList<SMString>)ownerObject.getValue().get("relationships_by_user")).getValue();
+				if (userObject.getValue().containsKey("relationships_by_user")) {
+					allRelsUser = ((SMList<SMString>)userObject.getValue().get("relationships_by_user")).getValue();
 				}
 				List<SMString> userAddList = new ArrayList<SMString>();
 				// - all relationships by others
 				List<SMString> allRelsOthers = new ArrayList<SMString>();
-				if (ownerObject.getValue().containsKey("relationships_by_others")) {
-					allRelsOthers = ((SMList<SMString>)ownerObject.getValue().get("relationships_by_others")).getValue();
+				if (userObject.getValue().containsKey("relationships_by_others")) {
+					allRelsOthers = ((SMList<SMString>)userObject.getValue().get("relationships_by_others")).getValue();
 				}
 				List<SMString> othersAddList = new ArrayList<SMString>();
 				for (int i = 0; i < relOrder.size(); i++) {
@@ -250,12 +193,27 @@ public class UpdateGroup implements CustomCodeMethod {
 				dataService.addRelatedObjects("group", groupId, "relationships_by_owner", userAddList);
 				dataService.addRelatedObjects("group", groupId, "relationships_by_others", othersAddList);
 				returnMap.put("added_relationships", addList);
-				// 2.3. change relationship order
+				
+				// update relationship order
+				List<SMUpdate> groupUpdates = new ArrayList<SMUpdate>();
 				groupUpdates.add(new SMSet("relationship_order", new SMList<SMString>(newRelOrder)));
+				dataService.updateObject("group", groupId, groupUpdates);
 				returnMap.put("relationship_order", newRelOrder);
 			}
-			// update the group
-			dataService.updateObject("group", groupId, groupUpdates);
+			
+			// 3. update user's group order & groups mod date
+			List<SMString> groupOrder = new ArrayList<SMString>();
+			if (userObject.getValue().containsKey("group_order")) {
+				groupOrder = ((SMList<SMString>)userObject.getValue().get("group_order")).getValue();
+			}
+			groupOrder.add(groupId);
+			List<SMUpdate> userUpdates = new ArrayList<SMUpdate>();
+			userUpdates.add(new SMSet("group_order", new SMList<SMString>(groupOrder)));
+			returnMap.put("group_order", groupId);
+			
+			long currentTime = System.currentTimeMillis();
+			userUpdates.add(new SMSet("groups_mod_date", new SMInt(currentTime)));
+			dataService.updateObject("user", userId, userUpdates);
 			
 			// 3. block and delete input ids (if any)
 			if (blockIds.size() + deleteIds.size() > 0) {
@@ -295,9 +253,9 @@ public class UpdateGroup implements CustomCodeMethod {
 					SMObject relObject = rels.get(i);
 					SMString relId = (SMString)relObject.getValue().get("relationship_id");
 					// find user's role in this relationship
-					SMString relOwnerId = (SMString)relObject.getValue().get("owner");
+					SMString ownerId = (SMString)relObject.getValue().get("owner");
 					String userRole = "";
-					if (relOwnerId.equals(userId)) {
+					if (ownerId.equals(userId)) {
 						userRole = "owner";
 					} else if (relObject.getValue().containsKey("receiver")) {
 						SMString receiverId = (SMString)relObject.getValue().get("receiver");
@@ -340,23 +298,23 @@ public class UpdateGroup implements CustomCodeMethod {
 									List<SMString> relIdList = new ArrayList<SMString>();
 									relIdList.add(relId);
 									String relKey = "relationships_by_" + (userRole.equals("owner") ? "owner" : "others");
-									List<SMString> groupIdList = new ArrayList<SMString>();
+									List<SMString> relGroupIdList = new ArrayList<SMString>();
 									for (int j = 0; j < groupsList.size(); j++) {
 										SMObject relGroupObject = groupsList.get(j);
 										SMString relGroupId = (SMString)relGroupObject.getValue().get("group_id");
 										dataService.removeRelatedObjects("group", relGroupId, relKey, relIdList, false);
-										groupIdList.add(relGroupId);
+										relGroupIdList.add(relGroupId);
 										// remove from group's relationship order as well
 										SMList<SMString> relOrderValue = (SMList<SMString>)relGroupObject.getValue().get("relationship_order");
 										List<SMString> groupRelOrder = relOrderValue.getValue();
 										if (groupRelOrder.remove(relId)) {
-											List<SMUpdate> relGroupUpdates = new ArrayList<SMUpdate>();
-											relGroupUpdates.add(new SMSet("relationship_order", new SMList<SMString>(groupRelOrder)));
-											dataService.updateObject("group", relGroupId, relGroupUpdates);
+											List<SMUpdate> groupUpdates = new ArrayList<SMUpdate>();
+											groupUpdates.add(new SMSet("relationship_order", new SMList<SMString>(groupRelOrder)));
+											dataService.updateObject("group", relGroupId, groupUpdates);
 										}
 									}
 									// remove groups from relationship's groups by user
-									dataService.removeRelatedObjects("relationship", relId, groupKey, groupIdList, false);
+									dataService.removeRelatedObjects("relationship", relId, groupKey, relGroupIdList, false);
 								}
 							}
 							// update type by user
@@ -372,16 +330,9 @@ public class UpdateGroup implements CustomCodeMethod {
 				returnMap.put("removed_events", removedEventIds);
 			}
 			
-			// 4. change groups mod date
-			long currentTime = System.currentTimeMillis();
-			List<SMUpdate> userUpdates = new ArrayList<SMUpdate>();
-			userUpdates.add(new SMSet("groups_mod_date", new SMInt(currentTime)));
-			dataService.updateObject("user", userId, userUpdates);
-			
 			// return updated data for local database
 			returnMap.put("last_sync_date", new Long(currentTime));
 			return new ResponseToProcess(HttpURLConnection.HTTP_OK, returnMap);
-			
 		} catch (InvalidSchemaException e) {
 			HashMap<String, String> errMap = new HashMap<String, String>();
 			errMap.put("error", "invalid_schema");
