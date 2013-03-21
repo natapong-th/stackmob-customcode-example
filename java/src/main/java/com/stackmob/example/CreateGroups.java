@@ -39,6 +39,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+// ***DEPRECATED***
 public class CreateGroups implements CustomCodeMethod {
 
 	@Override
@@ -111,7 +112,7 @@ public class CreateGroups implements CustomCodeMethod {
 			fields.add("group_order");
 			ResultFilters filter = new ResultFilters(0, -1, null, fields);
 			// - execute query
-			List<SMObject> users = dataService.readObjects("user", userQuery);
+			List<SMObject> users = dataService.readObjects("user", userQuery, 0, filter);
 			if (users != null && users.size() == 1) {
 				SMObject userObject = users.get(0);
 				List<SMString> groupIdList = new ArrayList<SMString>();
