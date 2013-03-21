@@ -33,6 +33,7 @@ import java.util.Map;
 import java.util.Arrays;
 import java.lang.String;
 import java.lang.Long;
+import java.lang.System;
 
 public class GetDatabase implements CustomCodeMethod {
 
@@ -152,122 +153,73 @@ public class GetDatabase implements CustomCodeMethod {
 			ResultFilters filter = new ResultFilters(0, -1, null, fields);
 			// - execute query
 			List<SMObject> users = dataService.readObjects("user", userQuery, 2, filter);
-			if (users != null && users.size() == 1) {
-				SMObject userObject = users.get(0);
-				Map<String, Object> returnMap = new HashMap<String, Object>();
- 				// 1. username
-				returnMap.put("username", username);
-				// 2. name, profile image, group order (check user mod date)
-				SMInt userModValue = (SMInt)userObject.getValue().get("user_mod_date");
-				long userModDate = userModValue.getValue().longValue();
-				if (lastSyncDate < userModDate) {
-					for (int i = 0; i < userStringFields.length; i++) {
-						SMString fieldValue = (SMString)userObject.getValue().get(userStringFields[i]);
-						returnMap.put(userStringFields[i], fieldValue.getValue());
-					}
-					List<SMString> groupOrderList = new ArrayList<SMString>();
-					if (userObject.getValue().containsKey("group_order")) {
-						SMList<SMString> groupOrderValue = (SMList<SMString>)userObject.getValue().get("group_order");
-						groupOrderList = groupOrderValue.getValue();
-					}
-					returnMap.put("group_order", groupOrderList);
+			if (users == null || users.size() != 1) {
+				HashMap<String, String> errMap = new HashMap<String, String>();
+				errMap.put("error", "invalid user fetch");
+				errMap.put("detail", (users == null ? "null fetch result" : ("fetch result count = " + users.size())));
+				return new ResponseToProcess(HttpURLConnection.HTTP_INTERNAL_ERROR, errMap);
+			}
+			
+			SMObject userObject = users.get(0);
+			Map<String, Object> returnMap = new HashMap<String, Object>();
+ 			// 1. username
+			returnMap.put("username", username);
+			// 2. name, profile image, group order (check user mod date)
+			SMInt userModValue = (SMInt)userObject.getValue().get("user_mod_date");
+			long userModDate = userModValue.getValue().longValue();
+			if (lastSyncDate < userModDate) {
+				for (int i = 0; i < userStringFields.length; i++) {
+					SMString fieldValue = (SMString)userObject.getValue().get(userStringFields[i]);
+					returnMap.put(userStringFields[i], fieldValue.getValue());
 				}
-				// 3. action, place, status mod date (check status mod date)
-				SMInt statusModValue = (SMInt)userObject.getValue().get("status_mod_date");
-				long statusModDate = statusModValue.getValue().longValue();
-				if (lastSyncDate < statusModDate) {
-					for (int i = 0; i < statusStringFields.length; i++) {
-						SMString fieldValue = (SMString)userObject.getValue().get(statusStringFields[i]);
-						returnMap.put(statusStringFields[i], fieldValue.getValue());
-					}
-					returnMap.put("status_mod_date", statusModValue.getValue());
+				List<SMString> groupOrderList = new ArrayList<SMString>();
+				if (userObject.getValue().containsKey("group_order")) {
+					SMList<SMString> groupOrderValue = (SMList<SMString>)userObject.getValue().get("group_order");
+					groupOrderList = groupOrderValue.getValue();
 				}
-				// 4. friends
-				List<Map<String, Object>> friends = new ArrayList<Map<String, Object>>();
-				// relationships by user
-				List<SMObject> relUserList = new ArrayList<SMObject>();
-				if (userObject.getValue().containsKey("relationships_by_user")) {
-					SMList<SMObject> relUserValue = (SMList<SMObject>)userObject.getValue().get("relationships_by_user");
-					relUserList = relUserValue.getValue();
+				returnMap.put("group_order", groupOrderList);
+			}
+			// 3. action, place, status mod date (check status mod date)
+			SMInt statusModValue = (SMInt)userObject.getValue().get("status_mod_date");
+			long statusModDate = statusModValue.getValue().longValue();
+			if (lastSyncDate < statusModDate) {
+				for (int i = 0; i < statusStringFields.length; i++) {
+					SMString fieldValue = (SMString)userObject.getValue().get(statusStringFields[i]);
+					returnMap.put(statusStringFields[i], fieldValue.getValue());
 				}
-				for (int i = 0; i < relUserList.size(); i++) {
-					Map<String, Object> friendMap = new HashMap<String, Object>();
-					SMObject relObject = relUserList.get(i);
-					// 4.1. relationship id
-					SMString relIdValue = (SMString)relObject.getValue().get("relationship_id");
-					friendMap.put("relationship_id", relIdValue.getValue());
-					// 4.2. type by user
-					SMInt typeUserValue = (SMInt)relObject.getValue().get("type_by_owner");
-					Long typeUser = typeUserValue.getValue();
-					friendMap.put("type_by_user", typeUser);
-					// 4.3. type by friend
-					SMInt typeFriendValue = (SMInt)relObject.getValue().get("type_by_receiver");
-					Long typeFriend = typeFriendValue.getValue();
-					friendMap.put("type_by_friend", typeFriend);
-					// check if this relationship is an invite
-					SMString inviteValue = (SMString)relObject.getValue().get("invite_email");
-					if (inviteValue.getValue().isEmpty()) {
-						SMObject friendObject = (SMObject)relObject.getValue().get("receiver");
-						// 4.4. username
-						SMString friendIdValue = (SMString)friendObject.getValue().get("username");
-						friendMap.put("username", friendIdValue.getValue());
-						// 4.5. name, profile image (check user mod date)
-						SMInt fUserModValue = (SMInt)friendObject.getValue().get("user_mod_date");
-						long fUserModDate = fUserModValue.getValue().longValue();
-						if (lastSyncDate < fUserModDate) {
-							for (int j = 0; j < userStringFields.length; j++) {
-								SMString fieldValue = (SMString)friendObject.getValue().get(userStringFields[j]);
-								friendMap.put(userStringFields[j], fieldValue.getValue());
-							}
-						}
-						// check if type is mutual friend
-						if (typeUser.longValue() == 2L && typeFriend.longValue() == 2L) {
-							// 4.6. action, place, status mod date (check status mod date)
-							SMInt fStatusModValue = (SMInt)friendObject.getValue().get("status_mod_date");
-							long fStatusModDate = fStatusModValue.getValue().longValue();
-							if (lastSyncDate < fStatusModDate) {
-								for (int j = 0; j < statusStringFields.length; j++) {
-									SMString fieldValue = (SMString)friendObject.getValue().get(statusStringFields[j]);
-									friendMap.put(statusStringFields[j], fieldValue.getValue());
-								}
-								friendMap.put("status_mod_date", fStatusModValue.getValue());
-							}
-							// 4.7. events
-							List<SMObject> eventsList = new ArrayList<SMObject>();
-							if (relObject.getValue().containsKey("events_by_receiver")) {
-								SMList<SMObject> eventsValue = (SMList<SMObject>)relObject.getValue().get("events_by_receiver");
-								eventsList = eventsValue.getValue();
-							}
-							friendMap.put("events", eventsList);
-						}
-					} else {
-						friendMap.put("invite_email", inviteValue.getValue());
-					}
-					
-					friends.add(friendMap);
+				returnMap.put("status_mod_date", statusModValue.getValue());
+			}
+			// 4. friends
+			List<Map<String, Object>> friends = new ArrayList<Map<String, Object>>();
+			// relationships by user
+			List<SMObject> relUserList = new ArrayList<SMObject>();
+			if (userObject.getValue().containsKey("relationships_by_user")) {
+				SMList<SMObject> relUserValue = (SMList<SMObject>)userObject.getValue().get("relationships_by_user");
+				relUserList = relUserValue.getValue();
+			}
+			for (int i = 0; i < relUserList.size(); i++) {
+				SMObject relObject = relUserList.get(i);
+				// do not return deleted friends
+				SMInt typeUserValue = (SMInt)relObject.getValue().get("type_by_owner");
+				Long typeUser = typeUserValue.getValue();
+				if (typeUser.longValue() == 4L) {
+					break;
 				}
-				// relationships by others
-				List<SMObject> relOthersList = new ArrayList<SMObject>();
-				if (userObject.getValue().containsKey("relationships_by_others")) {
-					SMList<SMObject> relOthersValue = (SMList<SMObject>)userObject.getValue().get("relationships_by_others");
-					relOthersList = relOthersValue.getValue();
-				}
-				for (int i = 0; i < relOthersList.size(); i++) {
-					Map<String, Object> friendMap = new HashMap<String, Object>();
-					SMObject relObject = relOthersList.get(i);
-					// 4.1. relationship id
-					SMString relIdValue = (SMString)relObject.getValue().get("relationship_id");
-					friendMap.put("relationship_id", relIdValue.getValue());
-					// 4.2. type by user
-					SMInt typeUserValue = (SMInt)relObject.getValue().get("type_by_receiver");
-					Long typeUser = typeUserValue.getValue();
-					friendMap.put("type_by_user", typeUser);
-					// 4.3. type by friend
-					SMInt typeFriendValue = (SMInt)relObject.getValue().get("type_by_owner");
-					Long typeFriend = typeFriendValue.getValue();
-					friendMap.put("type_by_friend", typeFriend);
-					
-					SMObject friendObject = (SMObject)relObject.getValue().get("owner");
+				
+				Map<String, Object> friendMap = new HashMap<String, Object>();
+				// 4.1. relationship id
+				SMString relIdValue = (SMString)relObject.getValue().get("relationship_id");
+				friendMap.put("relationship_id", relIdValue.getValue());
+				// 4.2. type by user
+				friendMap.put("type_by_user", typeUser);
+				// 4.3. type by friend
+				SMInt typeFriendValue = (SMInt)relObject.getValue().get("type_by_receiver");
+				Long typeFriend = typeFriendValue.getValue();
+				friendMap.put("type_by_friend", typeFriend);
+				// check if this relationship is an invite
+				SMString inviteValue = (SMString)relObject.getValue().get("invite_email");
+				if (inviteValue.getValue().isEmpty()) {
+					SMObject friendObject = (SMObject)relObject.getValue().get("receiver");
 					// 4.4. username
 					SMString friendIdValue = (SMString)friendObject.getValue().get("username");
 					friendMap.put("username", friendIdValue.getValue());
@@ -294,56 +246,115 @@ public class GetDatabase implements CustomCodeMethod {
 						}
 						// 4.7. events
 						List<SMObject> eventsList = new ArrayList<SMObject>();
-						if (relObject.getValue().containsKey("events_by_owner")) {
-							SMList<SMObject> eventsValue = (SMList<SMObject>)relObject.getValue().get("events_by_owner");
+						if (relObject.getValue().containsKey("events_by_receiver")) {
+							SMList<SMObject> eventsValue = (SMList<SMObject>)relObject.getValue().get("events_by_receiver");
 							eventsList = eventsValue.getValue();
 						}
 						friendMap.put("events", eventsList);
 					}
-					friends.add(friendMap);
+				} else {
+					friendMap.put("invite_email", inviteValue.getValue());
 				}
-				returnMap.put("friends", friends);
-				// 5. groups (check groups mod date)
-				SMInt groupsModValue = (SMInt)userObject.getValue().get("groups_mod_date");
-				long groupsModDate = groupsModValue.getValue().longValue();
-				if (lastSyncDate < groupsModDate) {
-					List<Map<String, Object>> localGroups = new ArrayList<Map<String, Object>>();
-					List<SMObject> groupsList = new ArrayList<SMObject>();
-					if (userObject.getValue().containsKey("groups")) {
-						SMList<SMObject> groupsValue = (SMList<SMObject>)userObject.getValue().get("groups");
-						groupsList = groupsValue.getValue();
-					}
-					for (int i = 0; i < groupsList.size(); i++) {
-						Map<String, Object> groupMap = new HashMap<String, Object>();
-						SMObject groupObject = groupsList.get(i);
-						// 5.1. group id, title
-						for (int j = 0; j < groupStringFields.length; j++) {
-							SMString fieldValue = (SMString)groupObject.getValue().get(groupStringFields[j]);
-							groupMap.put(groupStringFields[j], fieldValue.getValue());
-						}
-						// 5.2. friend order
-						List<SMString> friendOrderList = new ArrayList<SMString>();
-						if (groupObject.getValue().containsKey("relationship_order")) {
-							SMList<SMString> friendOrderValue = (SMList<SMString>)groupObject.getValue().get("relationship_order");
-							friendOrderList = friendOrderValue.getValue();
-						}
-						groupMap.put("friend_order", friendOrderList);
-						
-						localGroups.add(groupMap);
-					}
-					returnMap.put("groups", localGroups);
-				}
-				// return the translated database
-				return new ResponseToProcess(HttpURLConnection.HTTP_OK, returnMap);
-			} else {
-				// TO DO:
-				// handle user fetch error
 				
-				HashMap<String, String> errMap = new HashMap<String, String>();
-				errMap.put("error", "invalid user fetch");
-				errMap.put("detail", (users == null ? "null fetch result" : ("fetch result count = " + users.size())));
-				return new ResponseToProcess(HttpURLConnection.HTTP_INTERNAL_ERROR, errMap);
+				friends.add(friendMap);
 			}
+			// relationships by others
+			List<SMObject> relOthersList = new ArrayList<SMObject>();
+			if (userObject.getValue().containsKey("relationships_by_others")) {
+				SMList<SMObject> relOthersValue = (SMList<SMObject>)userObject.getValue().get("relationships_by_others");
+				relOthersList = relOthersValue.getValue();
+			}
+			for (int i = 0; i < relOthersList.size(); i++) {
+				SMObject relObject = relOthersList.get(i);
+				// do not return deleted friends
+				SMInt typeUserValue = (SMInt)relObject.getValue().get("type_by_receiver");
+				Long typeUser = typeUserValue.getValue();
+				if (typeUser.longValue() == 4L) {
+					break;
+				}
+				
+				Map<String, Object> friendMap = new HashMap<String, Object>();
+				// 4.1. relationship id
+				SMString relIdValue = (SMString)relObject.getValue().get("relationship_id");
+				friendMap.put("relationship_id", relIdValue.getValue());
+				// 4.2. type by user
+				friendMap.put("type_by_user", typeUser);
+				// 4.3. type by friend
+				SMInt typeFriendValue = (SMInt)relObject.getValue().get("type_by_owner");
+				Long typeFriend = typeFriendValue.getValue();
+				friendMap.put("type_by_friend", typeFriend);
+				
+				SMObject friendObject = (SMObject)relObject.getValue().get("owner");
+				// 4.4. username
+				SMString friendIdValue = (SMString)friendObject.getValue().get("username");
+				friendMap.put("username", friendIdValue.getValue());
+				// 4.5. name, profile image (check user mod date)
+				SMInt fUserModValue = (SMInt)friendObject.getValue().get("user_mod_date");
+				long fUserModDate = fUserModValue.getValue().longValue();
+				if (lastSyncDate < fUserModDate) {
+					for (int j = 0; j < userStringFields.length; j++) {
+						SMString fieldValue = (SMString)friendObject.getValue().get(userStringFields[j]);
+						friendMap.put(userStringFields[j], fieldValue.getValue());
+					}
+				}
+				// check if type is mutual friend
+				if (typeUser.longValue() == 2L && typeFriend.longValue() == 2L) {
+					// 4.6. action, place, status mod date (check status mod date)
+					SMInt fStatusModValue = (SMInt)friendObject.getValue().get("status_mod_date");
+					long fStatusModDate = fStatusModValue.getValue().longValue();
+					if (lastSyncDate < fStatusModDate) {
+						for (int j = 0; j < statusStringFields.length; j++) {
+							SMString fieldValue = (SMString)friendObject.getValue().get(statusStringFields[j]);
+							friendMap.put(statusStringFields[j], fieldValue.getValue());
+						}
+						friendMap.put("status_mod_date", fStatusModValue.getValue());
+					}
+					// 4.7. events
+					List<SMObject> eventsList = new ArrayList<SMObject>();
+					if (relObject.getValue().containsKey("events_by_owner")) {
+						SMList<SMObject> eventsValue = (SMList<SMObject>)relObject.getValue().get("events_by_owner");
+						eventsList = eventsValue.getValue();
+					}
+					friendMap.put("events", eventsList);
+				}
+				friends.add(friendMap);
+			}
+			returnMap.put("friends", friends);
+			
+			// 5. groups (check groups mod date)
+			SMInt groupsModValue = (SMInt)userObject.getValue().get("groups_mod_date");
+			long groupsModDate = groupsModValue.getValue().longValue();
+			if (lastSyncDate < groupsModDate) {
+				List<Map<String, Object>> localGroups = new ArrayList<Map<String, Object>>();
+				List<SMObject> groupsList = new ArrayList<SMObject>();
+				if (userObject.getValue().containsKey("groups")) {
+					SMList<SMObject> groupsValue = (SMList<SMObject>)userObject.getValue().get("groups");
+					groupsList = groupsValue.getValue();
+				}
+				for (int i = 0; i < groupsList.size(); i++) {
+					Map<String, Object> groupMap = new HashMap<String, Object>();
+					SMObject groupObject = groupsList.get(i);
+					// 5.1. group id, title
+					for (int j = 0; j < groupStringFields.length; j++) {
+						SMString fieldValue = (SMString)groupObject.getValue().get(groupStringFields[j]);
+						groupMap.put(groupStringFields[j], fieldValue.getValue());
+					}
+					// 5.2. friend order
+					List<SMString> friendOrderList = new ArrayList<SMString>();
+					if (groupObject.getValue().containsKey("relationship_order")) {
+						SMList<SMString> friendOrderValue = (SMList<SMString>)groupObject.getValue().get("relationship_order");
+						friendOrderList = friendOrderValue.getValue();
+					}
+					groupMap.put("friend_order", friendOrderList);
+					
+					localGroups.add(groupMap);
+				}
+				returnMap.put("groups", localGroups);
+			}
+			// return the translated database
+			long currentTime = System.currentTimeMillis();
+			returnMap.put("last_sync_date", new Long(currentTime));
+			return new ResponseToProcess(HttpURLConnection.HTTP_OK, returnMap);
 		} catch (InvalidSchemaException e) {
 			HashMap<String, String> errMap = new HashMap<String, String>();
 			errMap.put("error", "invalid_schema");
