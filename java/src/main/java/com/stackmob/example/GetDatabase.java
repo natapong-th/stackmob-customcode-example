@@ -212,9 +212,12 @@ public class GetDatabase implements CustomCodeMethod {
 				friendMap.put("relationship_id", relIdValue.getValue());
 				// 4.2. type by user
 				friendMap.put("type_by_user", typeUser);
-				// 4.3. type by friend
+				// 4.3. type by friend (block/delete is shown as friend)
 				SMInt typeFriendValue = (SMInt)relObject.getValue().get("type_by_receiver");
 				Long typeFriend = typeFriendValue.getValue();
+				if (typeFriend.longValue() > 2L) {
+					typeFriend = new Long(2L);
+				}
 				friendMap.put("type_by_friend", typeFriend);
 				// check if this relationship is an invite
 				SMString inviteValue = (SMString)relObject.getValue().get("invite_email");
@@ -279,9 +282,12 @@ public class GetDatabase implements CustomCodeMethod {
 				friendMap.put("relationship_id", relIdValue.getValue());
 				// 4.2. type by user
 				friendMap.put("type_by_user", typeUser);
-				// 4.3. type by friend
+				// 4.3. type by friend (block/delete is shown as friend)
 				SMInt typeFriendValue = (SMInt)relObject.getValue().get("type_by_owner");
 				Long typeFriend = typeFriendValue.getValue();
+				if (typeFriend.longValue() > 2L) {
+					typeFriend = new Long(2L);
+				}
 				friendMap.put("type_by_friend", typeFriend);
 				
 				SMObject friendObject = (SMObject)relObject.getValue().get("owner");
