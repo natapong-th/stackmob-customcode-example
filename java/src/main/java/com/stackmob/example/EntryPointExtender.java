@@ -29,14 +29,14 @@ public class EntryPointExtender extends JarEntryObject {
     List<CustomCodeMethod> list = new ArrayList<CustomCodeMethod>();
 	list.add(new InitializeUser());
 	list.add(new GetDatabase());
-	list.add(new CreateRelationships());
-	list.add(new CreateNewGroup());
 	list.add(new UpdateUser());
+	list.add(new CreateRelationships());
 	list.add(new UpdateRelationships());
+	list.add(new CreateNewGroup());
 	list.add(new UpdateGroup());
 	list.add(new DeleteGroup());
-	list.add(new DeleteEvent());
 	list.add(new CreateStatusRequest());
+	list.add(new DeleteEvents());
     return list;
   }
 
