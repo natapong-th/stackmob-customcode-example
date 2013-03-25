@@ -206,8 +206,8 @@ public class UpdateUser implements CustomCodeMethod {
 			long currentTime = System.currentTimeMillis();
 			if (userChanged) {
 				userUpdates.add(new SMSet("user_mod_date", new SMInt(currentTime)));
-				returnMap.put("user_mod_date", new Long(currentTime));
 			}
+			
 			// check if action or place are different
 			boolean statusChanged = false;
 			// 5. change action
@@ -295,7 +295,7 @@ public class UpdateUser implements CustomCodeMethod {
 					}
 					boolean validAction = true;
 					boolean fixPlace = false;
-					// if change to joining, create a joining event to the freind
+					// if change to joining, create a joining event to the friend
 					if (toJoining) {
 						SMString relId = new SMString(action.substring(8)); // length of "joining:"
 						// fetch relationship object

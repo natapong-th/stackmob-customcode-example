@@ -142,15 +142,17 @@ public class InitializeUser implements CustomCodeMethod {
 				ownerIdList.add(userId);
 				dataService.addRelatedObjects("group", groupId, "owner", ownerIdList);
 			}
-			// add all groups in user's groups (and change group order)
+			// add all groups in user's groups
 			dataService.addRelatedObjects("user", userId, "groups", groupIdList);
 			
-			// update user's group order & groups mod date
+			// update user's group order
 			List<SMUpdate> userUpdates = new ArrayList<SMUpdate>();
 			userUpdates.add(new SMSet("group_order", new SMList<SMString>(groupIdList)));
 			returnMap.put("group_order", groupIdList);
 			
+			// update user mod date (group order) and groups mod date (new groups)
 			long currentTime = System.currentTimeMillis();
+			userUpdates.add(new SMSet("user_mod_date", new SMInt(currentTime)));
 			userUpdates.add(new SMSet("groups_mod_date", new SMInt(currentTime)));
 			dataService.updateObject("user", userId, userUpdates);
 			

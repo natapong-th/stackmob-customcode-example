@@ -257,7 +257,13 @@ public class UpdateGroup implements CustomCodeMethod {
 			// update the group
 			dataService.updateObject("group", groupId, groupUpdates);
 			
-			// 3. block and delete input ids (if any)
+			// 3. change groups mod date
+			long currentTime = System.currentTimeMillis();
+			List<SMUpdate> userUpdates = new ArrayList<SMUpdate>();
+			userUpdates.add(new SMSet("groups_mod_date", new SMInt(currentTime)));
+			dataService.updateObject("user", userId, userUpdates);
+			
+			// 4. block and delete input ids (if any)
 			if (blockIds.size() + deleteIds.size() > 0) {
 				// fetch relationship objects
 				// - build query
@@ -371,12 +377,6 @@ public class UpdateGroup implements CustomCodeMethod {
 				returnMap.put("changed_relationships", foundRelIds);
 				returnMap.put("removed_events", removedEventIds);
 			}
-			
-			// 4. change groups mod date
-			long currentTime = System.currentTimeMillis();
-			List<SMUpdate> userUpdates = new ArrayList<SMUpdate>();
-			userUpdates.add(new SMSet("groups_mod_date", new SMInt(currentTime)));
-			dataService.updateObject("user", userId, userUpdates);
 			
 			// return updated data for local database
 			returnMap.put("last_sync_date", new Long(currentTime));

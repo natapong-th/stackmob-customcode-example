@@ -186,8 +186,9 @@ public class DeleteGroup implements CustomCodeMethod {
 			// 4. delete group
 			dataService.deleteObject("group", groupId);
 			
-			// 5. change groups mod date
+			// 5. update user mod date (group order) and groups mod date (new group)
 			long currentTime = System.currentTimeMillis();
+			userUpdates.add(new SMSet("user_mod_date", new SMInt(currentTime)));
 			userUpdates.add(new SMSet("groups_mod_date", new SMInt(currentTime)));
 			dataService.updateObject("user", userId, userUpdates);
 			

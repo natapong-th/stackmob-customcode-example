@@ -81,7 +81,7 @@ public class CreateNewGroup implements CustomCodeMethod {
 				if (!jsonObj.isNull("title")) {
 					title = jsonObj.getString("title");
 				}
-				if (!jsonObj.isNull("block_ids")) {
+				if (!jsonObj.isNull("relationship_order")) {
 					JSONArray relArray = jsonObj.getJSONArray("relationship_order");
 					for (int i = 0; i < relArray.length(); i++) {
 						String relId = relArray.getString(i);
@@ -162,7 +162,6 @@ public class CreateNewGroup implements CustomCodeMethod {
 			// 2. add relationships in relationship order to the group
 			// and remove non-existing relationship from the order
 			if (relOrder.size() > 0) {
-				List<SMString> addList = new ArrayList<SMString>();
 				List<SMString> newRelOrder = new ArrayList<SMString>(relOrder);
 				// - all relationships by user
 				List<SMString> allRelsUser = new ArrayList<SMString>();
@@ -181,18 +180,15 @@ public class CreateNewGroup implements CustomCodeMethod {
 					if (allRelsUser.contains(relId)) {
 						dataService.addRelatedObjects("relationship", relId, "groups_by_owner", groupIdList);
 						userAddList.add(relId);
-						addList.add(relId);
 					} else if (allRelsOthers.contains(relId)) {
 						dataService.addRelatedObjects("relationship", relId, "groups_by_receiver", groupIdList);
 						othersAddList.add(relId);
-						addList.add(relId);
 					} else {
 						newRelOrder.remove(relId);
 					}
 				}
 				dataService.addRelatedObjects("group", groupId, "relationships_by_owner", userAddList);
 				dataService.addRelatedObjects("group", groupId, "relationships_by_others", othersAddList);
-				returnMap.put("added_relationships", addList);
 				
 				// update relationship order
 				List<SMUpdate> groupUpdates = new ArrayList<SMUpdate>();
@@ -201,7 +197,7 @@ public class CreateNewGroup implements CustomCodeMethod {
 				returnMap.put("relationship_order", newRelOrder);
 			}
 			
-			// 3. update user's group order & groups mod date
+			// 3. update user's group order
 			List<SMString> groupOrder = new ArrayList<SMString>();
 			if (userObject.getValue().containsKey("group_order")) {
 				groupOrder = ((SMList<SMString>)userObject.getValue().get("group_order")).getValue();
@@ -211,11 +207,13 @@ public class CreateNewGroup implements CustomCodeMethod {
 			userUpdates.add(new SMSet("group_order", new SMList<SMString>(groupOrder)));
 			returnMap.put("group_order", groupId);
 			
+			// 4. update user mod date (group order) and groups mod date (new group)
 			long currentTime = System.currentTimeMillis();
+			userUpdates.add(new SMSet("user_mod_date", new SMInt(currentTime)));
 			userUpdates.add(new SMSet("groups_mod_date", new SMInt(currentTime)));
 			dataService.updateObject("user", userId, userUpdates);
 			
-			// 3. block and delete input ids (if any)
+			// 5. block and delete input ids (if any)
 			if (blockIds.size() + deleteIds.size() > 0) {
 				// fetch relationship objects
 				// - build query
