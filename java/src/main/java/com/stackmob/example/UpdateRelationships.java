@@ -48,7 +48,7 @@ public class UpdateRelationships implements CustomCodeMethod {
 	
 	@Override
 	public List<String> getParams() {
-		return Arrays.asList("relationship_ids", "type");
+		return Arrays.asList("accept_ids", "block_ids", "delete_ids");
 	}
 	
 	@Override
@@ -71,20 +71,32 @@ public class UpdateRelationships implements CustomCodeMethod {
 		SMString userId = new SMString(username);
 		
 		// get update parameters
-		List<SMString> relIds = new ArrayList<SMString>();
-		long type = 0L;
+		List<SMString> acceptIds = new ArrayList<SMString>();
+		List<SMString> blockIds = new ArrayList<SMString>();
+		List<SMString> deleteIds = new ArrayList<SMString>();
 		if (!request.getBody().isEmpty()) {
 			try {
 				JSONObject jsonObj = new JSONObject(request.getBody());
-				if (!jsonObj.isNull("relationship_ids")) {
-					JSONArray relIdArray = jsonObj.getJSONArray("relationship_ids");
+				if (!jsonObj.isNull("accept_ids")) {
+					JSONArray relIdArray = jsonObj.getJSONArray("accept_ids");
 					for (int i = 0; i < relIdArray.length(); i++) {
 						String relId = relIdArray.getString(i);
-						relIds.add(new SMString(relId));
+						acceptIds.add(new SMString(relId));
 					}
 				}
-				if (!jsonObj.isNull("type")) {
-					type = Long.parseLong(jsonObj.getString("type"));
+				if (!jsonObj.isNull("block_ids")) {
+					JSONArray relIdArray = jsonObj.getJSONArray("block_ids");
+					for (int i = 0; i < relIdArray.length(); i++) {
+						String relId = relIdArray.getString(i);
+						blockIds.add(new SMString(relId));
+					}
+				}
+				if (!jsonObj.isNull("delete_ids")) {
+					JSONArray relIdArray = jsonObj.getJSONArray("delete_ids");
+					for (int i = 0; i < relIdArray.length(); i++) {
+						String relId = relIdArray.getString(i);
+						deleteIds.add(new SMString(relId));
+					}
 				}
 			} catch (Exception e) {
 				HashMap<String, String> errParams = new HashMap<String, String>();
@@ -92,7 +104,7 @@ public class UpdateRelationships implements CustomCodeMethod {
 				return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
 			}
 		}
-		if (relIds.size() == 0 || type < 2L || type > 4L) {
+		if (acceptIds.size() + blockIds.size() + deleteIds.size() == 0) {
 			HashMap<String, String> errParams = new HashMap<String, String>();
 			errParams.put("error", "invalid parameters");
 			return new ResponseToProcess(HttpURLConnection.HTTP_BAD_REQUEST, errParams); // http 400 - bad request
@@ -105,8 +117,11 @@ public class UpdateRelationships implements CustomCodeMethod {
 		try {
 			// fetch relationship objects
 			// - build query
+			List<SMString> allIds = new ArrayList<SMString>(acceptIds);
+			allIds.addAll(blockIds);
+			allIds.addAll(deleteIds);
 			List<SMCondition> relQuery = new ArrayList<SMCondition>();
-			relQuery.add(new SMIn("relationship_id", relIds));
+			relQuery.add(new SMIn("relationship_id", allIds));
 			// - build result filter
 			List<String> fields = new ArrayList<String>();
 			fields.add("relationship_id");
@@ -126,7 +141,7 @@ public class UpdateRelationships implements CustomCodeMethod {
 			// - execute query
 			List<SMObject> rels = dataService.readObjects("relationship", relQuery, 1, filter);
 			// report error if query failed
-			if (rels == null || rels.size() != relIds.size()) {
+			if (rels == null || rels.size() != allIds.size()) {
 				HashMap<String, String> errMap = new HashMap<String, String>();
 				errMap.put("error", "invalid relationship fetch");
 				errMap.put("detail", (rels == null ? "null fetch result" : ("fetch result count = " + rels.size())));
@@ -153,6 +168,13 @@ public class UpdateRelationships implements CustomCodeMethod {
 				}
 				// if user is in this relationship, change its type by user
 				if (!userRole.isEmpty()) {
+					long type = blockIds.contains(relId) ? 3L : 4L;
+					if (blockIds.contains(relId)) {
+						type = 3L;
+					}
+					else if (deleteIds.contains(relId)) {
+						type = 4L;
+					}
 					String typeUserKey = "type_by_" + userRole;
 					SMInt typeUser = (SMInt)relObject.getValue().get(typeUserKey);
 					if (typeUser.getValue().longValue() != type) {
@@ -242,7 +264,7 @@ public class UpdateRelationships implements CustomCodeMethod {
 				dataService.updateObject("user", userId, userUpdates);
 			}
 			// return updated data for local database
-			returnMap.put("relationship_ids", foundRelIds);
+			returnMap.put("changed_relationships", foundRelIds);
 			returnMap.put("removed_events", removedEventIds);
 			returnMap.put("last_sync_date", new Long(currentTime));
 			return new ResponseToProcess(HttpURLConnection.HTTP_OK, returnMap);
