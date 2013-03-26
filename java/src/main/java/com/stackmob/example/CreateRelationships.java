@@ -118,14 +118,26 @@ public class CreateRelationships implements CustomCodeMethod {
 			userFields.add("relationships_by_user");
 			userFields.add("relationships_by_user.relationship_id");
 			userFields.add("relationships_by_user.type_by_owner");
+			userFields.add("relationships_by_user.type_by_receiver");
 			userFields.add("relationships_by_user.invite_email");
 			userFields.add("relationships_by_user.receiver");
 			userFields.add("relationships_by_user.receiver.username");
+			userFields.add("relationships_by_user.receiver.name");
+			userFields.add("relationships_by_user.receiver.profile_image_url");
+			userFields.add("relationships_by_user.receiver.action");
+			userFields.add("relationships_by_user.receiver.place");
+			userFields.add("relationships_by_user.receiver.status_mod_date");
 			userFields.add("relationships_by_others");
 			userFields.add("relationships_by_others.relationship_id");
+			userFields.add("relationships_by_others.type_by_owner");
 			userFields.add("relationships_by_others.type_by_receiver");
 			userFields.add("relationships_by_others.owner");
 			userFields.add("relationships_by_others.owner.username");
+			userFields.add("relationships_by_others.owner.name");
+			userFields.add("relationships_by_others.owner.profile_image_url");
+			userFields.add("relationships_by_others.owner.action");
+			userFields.add("relationships_by_others.owner.place");
+			userFields.add("relationships_by_others.owner.status_mod_date");
 			ResultFilters userFilter = new ResultFilters(0, -1, null, userFields);
 			// - execute query
 			List<SMObject> users = dataService.readObjects("user", userQuery, 2, userFilter);
@@ -152,13 +164,45 @@ public class CreateRelationships implements CustomCodeMethod {
 			for (int i = 0; i < relUserList.size(); i++) {
 				SMObject relObject = relUserList.get(i);
 				SMString friendId = (SMString)relObject.getValue().get("invite_email");
+				// if not an invite, get username instead 
 				if (friendId.getValue().isEmpty()) {
 					SMObject friendObject = (SMObject)relObject.getValue().get("receiver");
 					friendId = (SMString)friendObject.getValue().get("username");
-				}
-				// if found, remove from the requested relationships
-				if (reqIds.remove(friendId)) {
-					// if it's deleted by user, change to friend
+					// if it's in the requested usernames, change to friend only if it's deleted by user
+					if (reqIds.remove(friendId)) {
+						SMInt typeUserValue = (SMInt)relObject.getValue().get("type_by_owner");
+						Long typeUser = typeUserValue.getValue();
+						if (typeUser.longValue() == 4L) {
+							SMString relId = (SMString)relObject.getValue().get("relationship_id");
+							List<SMUpdate> relUpdates = new ArrayList<SMUpdate>();
+							relUpdates.add(new SMSet("type_by_owner", new SMInt(2L)));
+							dataService.updateObject("relationship", relId, relUpdates);
+							
+							// return the friend's data according to relationship types
+							Map<String, Object> friendMap = new HashMap<String, Object>();
+							friendMap.put("relationship_id", relId);
+							friendMap.put("username", friendId);
+							SMInt typeFriendValue = (SMInt)relObject.getValue().get("type_by_receiver");
+							Long typeFriend = typeFriendValue.getValue();
+							if (typeFriend.longValue() > 2L) {
+								friendMap.put("type_by_friend", new Long(2L));
+							} else {
+								friendMap.put("type_by_friend", typeFriend);
+							}
+							friendMap.put("name", (SMString)friendObject.getValue().get("name"));
+							friendMap.put("profile_image_url", (SMString)friendObject.getValue().get("profile_image_url"));
+							if (typeFriend.longValue() == 2L) {
+								friendMap.put("action", (SMString)friendObject.getValue().get("action"));
+								friendMap.put("place", (SMString)friendObject.getValue().get("place"));
+								friendMap.put("status_mod_date", (SMInt)friendObject.getValue().get("status_mod_date"));
+							}
+							addedFriends.add(friendMap);
+							
+							userRelIds.add(relId);
+						}
+					}
+				// otherwise, do the same thing but return friend data of an invite instead
+				} else if (reqIds.remove(friendId)) {
 					SMInt typeUserValue = (SMInt)relObject.getValue().get("type_by_owner");
 					Long typeUser = typeUserValue.getValue();
 					if (typeUser.longValue() == 4L) {
@@ -167,9 +211,17 @@ public class CreateRelationships implements CustomCodeMethod {
 						relUpdates.add(new SMSet("type_by_owner", new SMInt(2L)));
 						dataService.updateObject("relationship", relId, relUpdates);
 						
+						// return the friend's data according to relationship types
 						Map<String, Object> friendMap = new HashMap<String, Object>();
 						friendMap.put("relationship_id", relId);
-						friendMap.put("username", friendId);
+						friendMap.put("invite_email", friendId);
+						SMInt typeFriendValue = (SMInt)relObject.getValue().get("type_by_receiver");
+						Long typeFriend = typeFriendValue.getValue();
+						if (typeFriend.longValue() > 2L) {
+							friendMap.put("type_by_friend", new Long(2L));
+						} else {
+							friendMap.put("type_by_friend", typeFriend);
+						}
 						addedFriends.add(friendMap);
 						
 						userRelIds.add(relId);
@@ -186,9 +238,8 @@ public class CreateRelationships implements CustomCodeMethod {
 				SMObject relObject = relOthersList.get(i);
 				SMObject friendObject = (SMObject)relObject.getValue().get("owner");
 				SMString friendId = (SMString)friendObject.getValue().get("username");
-				// if found, remove from the requested relationships
+				// if it's in the requested usernames, change to friend only if it's deleted by user
 				if (reqIds.remove(friendId)) {
-					// if it's deleted by user, change to friend
 					SMInt typeUserValue = (SMInt)relObject.getValue().get("type_by_receiver");
 					Long typeUser = typeUserValue.getValue();
 					if (typeUser.longValue() == 4L) {
@@ -197,9 +248,24 @@ public class CreateRelationships implements CustomCodeMethod {
 						relUpdates.add(new SMSet("type_by_receiver", new SMInt(2L)));
 						dataService.updateObject("relationship", relId, relUpdates);
 						
+						// return the friend's data according to relationship types
 						Map<String, Object> friendMap = new HashMap<String, Object>();
 						friendMap.put("relationship_id", relId);
 						friendMap.put("username", friendId);
+						SMInt typeFriendValue = (SMInt)relObject.getValue().get("type_by_owner");
+						Long typeFriend = typeFriendValue.getValue();
+						if (typeFriend.longValue() > 2L) {
+							friendMap.put("type_by_friend", new Long(2L));
+						} else {
+							friendMap.put("type_by_friend", typeFriend);
+						}
+						friendMap.put("name", (SMString)friendObject.getValue().get("name"));
+						friendMap.put("profile_image_url", (SMString)friendObject.getValue().get("profile_image_url"));
+						if (typeFriend.longValue() == 2L) {
+							friendMap.put("action", (SMString)friendObject.getValue().get("action"));
+							friendMap.put("place", (SMString)friendObject.getValue().get("place"));
+							friendMap.put("status_mod_date", (SMInt)friendObject.getValue().get("status_mod_date"));
+						}
 						addedFriends.add(friendMap);
 						
 						othersRelIds.add(relId);
@@ -215,6 +281,8 @@ public class CreateRelationships implements CustomCodeMethod {
 				// - build result filter
 				List<String> friendFields = new ArrayList<String>();
 				friendFields.add("username");
+				friendFields.add("name");
+				friendFields.add("profile_image_url");
 				ResultFilters friendFilter = new ResultFilters(0, -1, null, friendFields);
 				// - execute query
 				List<SMObject> friends = dataService.readObjects("user", friendQuery, 0, friendFilter);
@@ -228,8 +296,8 @@ public class CreateRelationships implements CustomCodeMethod {
 				List<SMString> allRelIdList = new ArrayList<SMString>();
 				// for each username that exists, create a new relationship
 				for (int i = 0; i < friends.size(); i++) {
-					SMObject friend = friends.get(i);
-					SMString friendId = (SMString)friend.getValue().get("username");
+					SMObject friendObject = friends.get(i);
+					SMString friendId = (SMString)friendObject.getValue().get("username");
 					
 					Map<String, SMValue> relMap = new HashMap<String, SMValue>();
 					relMap.put("sm_owner", new SMString("user/" + username));
@@ -274,6 +342,9 @@ public class CreateRelationships implements CustomCodeMethod {
 					Map<String, Object> friendMap = new HashMap<String, Object>();
 					friendMap.put("relationship_id", relId);
 					friendMap.put("username", friendId);
+					friendMap.put("type_by_friend", new Long(1L));
+					friendMap.put("name", (SMString)friendObject.getValue().get("name"));
+					friendMap.put("profile_image_url", (SMString)friendObject.getValue().get("profile_image_url"));
 					addedFriends.add(friendMap);
 					
 					userRelIds.add(relId);
@@ -384,7 +455,7 @@ public class CreateRelationships implements CustomCodeMethod {
 					userUpdates.add(new SMSet("groups_mod_date", new SMInt(currentTime)));
 					dataService.updateObject("user", userId, userUpdates);
 					
-					returnMap.put("relationship_order", relOrder);
+					returnMap.put("friend_order", relOrder);
 				}
 			}
 			// return data for local database

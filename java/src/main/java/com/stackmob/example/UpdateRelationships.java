@@ -127,8 +127,17 @@ public class UpdateRelationships implements CustomCodeMethod {
 			fields.add("relationship_id");
 			fields.add("type_by_owner");
 			fields.add("type_by_receiver");
+			fields.add("invite_email");
 			fields.add("owner");
+			fields.add("owner.username");
+			fields.add("owner.action");
+			fields.add("owner.place");
+			fields.add("owner.status_mod_date");
 			fields.add("receiver");
+			fields.add("receiver.username");
+			fields.add("receiver.action");
+			fields.add("receiver.place");
+			fields.add("receiver.status_mod_date");
 			fields.add("events_by_owner");
 			fields.add("events_by_receiver");
 			fields.add("groups_by_owner");
@@ -149,6 +158,7 @@ public class UpdateRelationships implements CustomCodeMethod {
 			}
 			
 			Map<String, Object> returnMap = new HashMap<String, Object>();
+			List<Map<String, Object>> foundFriends = new ArrayList<Map<String, Object>>();
 			List<SMString> foundRelIds = new ArrayList<SMString>();
 			List<SMString> removedEventIds = new ArrayList<SMString>();
 			boolean groupChange = false;
@@ -156,19 +166,21 @@ public class UpdateRelationships implements CustomCodeMethod {
 				SMObject relObject = rels.get(i);
 				SMString relId = (SMString)relObject.getValue().get("relationship_id");
 				// find user's role in this relationship
-				SMString ownerId = (SMString)relObject.getValue().get("owner");
+				SMObject ownerObject = (SMObject)relObject.getValue().get("owner");
+				SMString ownerId = (SMString)ownerObject.getValue().get("username");
 				String userRole = "";
 				if (ownerId.equals(userId)) {
 					userRole = "owner";
 				} else if (relObject.getValue().containsKey("receiver")) {
-					SMString receiverId = (SMString)relObject.getValue().get("receiver");
+					SMObject receiverObject = (SMObject)relObject.getValue().get("receiver");
+					SMString receiverId = (SMString)receiverObject.getValue().get("username");
 					if (receiverId.equals(userId)) {
 						userRole = "receiver";
 					}
 				}
 				// if user is in this relationship, change its type by user
 				if (!userRole.isEmpty()) {
-					long type = blockIds.contains(relId) ? 3L : 4L;
+					long type = 2L;
 					if (blockIds.contains(relId)) {
 						type = 3L;
 					}
@@ -251,10 +263,45 @@ public class UpdateRelationships implements CustomCodeMethod {
 						relUpdates.add(new SMSet(typeUserKey, new SMInt(type)));
 						dataService.updateObject("relationship", relId, relUpdates);
 						
-						foundRelIds.add(relId);
+						// if change to Accept, return friend's data for syncing
+						if (type == 2L) {
+							Map<String, Object> friendMap = new HashMap<String, Object>();
+							friendMap.put("relationship_id", relId);
+							if (userRole.equals("owner")) {
+								SMString friendId = (SMString)relObject.getValue().get("invite_email");
+								// if not an invite, get username instead 
+								if (friendId.getValue().isEmpty()) {
+									SMObject friendObject = (SMObject)relObject.getValue().get("receiver");
+									friendId = (SMString)friendObject.getValue().get("username");
+									friendMap.put("username", friendId);
+									if (typeOther.getValue().longValue() == 2L) {
+										friendMap.put("action", (SMString)friendObject.getValue().get("action"));
+										friendMap.put("place", (SMString)friendObject.getValue().get("place"));
+										friendMap.put("status_mod_date", (SMInt)friendObject.getValue().get("status_mod_date"));
+									}
+								} else {
+									friendMap.put("invite_email", friendId);
+								}
+							} else {
+								SMObject friendObject = ownerObject;
+								SMString friendId = (SMString)friendObject.getValue().get("username");
+								friendMap.put("username", friendId);
+								if (typeOther.getValue().longValue() == 2L) {
+									friendMap.put("action", (SMString)friendObject.getValue().get("action"));
+									friendMap.put("place", (SMString)friendObject.getValue().get("place"));
+									friendMap.put("status_mod_date", (SMInt)friendObject.getValue().get("status_mod_date"));
+								}
+							}
+							foundFriends.add(friendMap);
+						} else {
+							foundRelIds.add(relId);
+						}
 					}
 				}
 			}
+			returnMap.put("friends", foundFriends);
+			returnMap.put("changed_relationships", foundRelIds);
+			returnMap.put("removed_events", removedEventIds);
 			
 			long currentTime = System.currentTimeMillis();
 			// if there is a group change, update groups mod date (only when type is changed from friend to block or delete)
@@ -264,8 +311,6 @@ public class UpdateRelationships implements CustomCodeMethod {
 				dataService.updateObject("user", userId, userUpdates);
 			}
 			// return updated data for local database
-			returnMap.put("changed_relationships", foundRelIds);
-			returnMap.put("removed_events", removedEventIds);
 			returnMap.put("last_sync_date", new Long(currentTime));
 			return new ResponseToProcess(HttpURLConnection.HTTP_OK, returnMap);
 		} catch (InvalidSchemaException e) {
