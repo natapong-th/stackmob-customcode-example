@@ -216,9 +216,10 @@ public class GetDatabase implements CustomCodeMethod {
 				SMInt typeFriendValue = (SMInt)relObject.getValue().get("type_by_receiver");
 				Long typeFriend = typeFriendValue.getValue();
 				if (typeFriend.longValue() > 2L) {
-					typeFriend = new Long(2L);
+					friendMap.put("type_by_friend", new Long(2L));
+				} else {
+					friendMap.put("type_by_friend", typeFriend);
 				}
-				friendMap.put("type_by_friend", typeFriend);
 				// check if this relationship is an invite
 				SMString inviteValue = (SMString)relObject.getValue().get("invite_email");
 				if (inviteValue.getValue().isEmpty()) {
@@ -247,6 +248,9 @@ public class GetDatabase implements CustomCodeMethod {
 							}
 							friendMap.put("status_mod_date", fStatusModValue.getValue());
 						}
+					}
+					// check if no types are block/delete
+					if (typeUser.longValue() < 2L && typeFriend.longValue() < 2L) {
 						// 4.7. events
 						List<SMObject> eventsList = new ArrayList<SMObject>();
 						if (relObject.getValue().containsKey("events_by_receiver")) {
@@ -286,10 +290,10 @@ public class GetDatabase implements CustomCodeMethod {
 				SMInt typeFriendValue = (SMInt)relObject.getValue().get("type_by_owner");
 				Long typeFriend = typeFriendValue.getValue();
 				if (typeFriend.longValue() > 2L) {
-					typeFriend = new Long(2L);
+					friendMap.put("type_by_friend", new Long(2L));
+				} else {
+					friendMap.put("type_by_friend", typeFriend);
 				}
-				friendMap.put("type_by_friend", typeFriend);
-				
 				SMObject friendObject = (SMObject)relObject.getValue().get("owner");
 				// 4.4. username
 				SMString friendIdValue = (SMString)friendObject.getValue().get("username");
@@ -315,6 +319,9 @@ public class GetDatabase implements CustomCodeMethod {
 						}
 						friendMap.put("status_mod_date", fStatusModValue.getValue());
 					}
+				}
+				// check if no types are block/delete
+				if (typeUser.longValue() < 2L && typeFriend.longValue() < 2L) {
 					// 4.7. events
 					List<SMObject> eventsList = new ArrayList<SMObject>();
 					if (relObject.getValue().containsKey("events_by_owner")) {
