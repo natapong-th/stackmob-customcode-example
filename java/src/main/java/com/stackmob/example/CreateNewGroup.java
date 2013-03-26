@@ -194,7 +194,7 @@ public class CreateNewGroup implements CustomCodeMethod {
 				List<SMUpdate> groupUpdates = new ArrayList<SMUpdate>();
 				groupUpdates.add(new SMSet("relationship_order", new SMList<SMString>(newRelOrder)));
 				dataService.updateObject("group", groupId, groupUpdates);
-				returnMap.put("relationship_order", newRelOrder);
+				returnMap.put("friend_order", newRelOrder);
 			}
 			
 			// 3. update user's group order

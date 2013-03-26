@@ -252,7 +252,7 @@ public class UpdateGroup implements CustomCodeMethod {
 				returnMap.put("added_relationships", addList);
 				// 2.3. change relationship order
 				groupUpdates.add(new SMSet("relationship_order", new SMList<SMString>(newRelOrder)));
-				returnMap.put("relationship_order", newRelOrder);
+				returnMap.put("friend_order", newRelOrder);
 			}
 			// update the group
 			dataService.updateObject("group", groupId, groupUpdates);
