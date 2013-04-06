@@ -274,6 +274,11 @@ public class UpdateRelationships implements CustomCodeMethod {
 									SMObject friendObject = (SMObject)relObject.getValue().get("receiver");
 									friendId = (SMString)friendObject.getValue().get("username");
 									friendMap.put("username", friendId);
+									if (typeOther.getValue().longValue() > 2L) {
+										friendMap.put("type_by_friend", new Long(2L));
+									} else {
+										friendMap.put("type_by_friend", typeOther.getValue());
+									}
 									if (typeOther.getValue().longValue() == 2L) {
 										friendMap.put("action", (SMString)friendObject.getValue().get("action"));
 										friendMap.put("place", (SMString)friendObject.getValue().get("place"));
