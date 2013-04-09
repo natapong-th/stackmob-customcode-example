@@ -123,7 +123,19 @@ public class InitializeUser implements CustomCodeMethod {
 			}
 			
 			Map<String, Object> returnMap = new HashMap<String, Object>();
-			// 1. create initial groups
+			
+			// 1. set initial user's fields
+			List<SMUpdate> userUpdates = new ArrayList<SMUpdate>();
+			userUpdates.add(new SMSet("name", userId));
+			userUpdates.add(new SMSet("profile_image_url", new SMString("")));
+			userUpdates.add(new SMSet("action", new SMString("")));
+			userUpdates.add(new SMSet("place", new SMString("")));
+			long currentTime = System.currentTimeMillis();
+			userUpdates.add(new SMSet("user_mod_date", new SMInt(currentTime)));
+			userUpdates.add(new SMSet("status_mod_date", new SMInt(currentTime)));
+			userUpdates.add(new SMSet("groups_mod_date", new SMInt(currentTime)));
+			
+			// 2. create initial groups
 			List<String> titles = Arrays.asList("Favorites", "Close friends", "Family");
 			List<SMString> groupIdList = new ArrayList<SMString>();
 			for (int i = 0; i < titles.size(); i++) {
@@ -146,17 +158,12 @@ public class InitializeUser implements CustomCodeMethod {
 			dataService.addRelatedObjects("user", userId, "groups", groupIdList);
 			
 			// update user's group order
-			List<SMUpdate> userUpdates = new ArrayList<SMUpdate>();
 			userUpdates.add(new SMSet("group_order", new SMList<SMString>(groupIdList)));
-			returnMap.put("group_order", groupIdList);
-			
-			// update user mod date (group order) and groups mod date (new groups)
-			long currentTime = System.currentTimeMillis();
-			userUpdates.add(new SMSet("user_mod_date", new SMInt(currentTime)));
-			userUpdates.add(new SMSet("groups_mod_date", new SMInt(currentTime)));
 			dataService.updateObject("user", userId, userUpdates);
 			
-			// 2. connect invited relationships to user
+			returnMap.put("group_order", groupIdList);
+			
+			// 3. connect invited relationships to user
 			List<SMString> relIds = new ArrayList<SMString>();
 			List<SMString> userIdList = new ArrayList<SMString>();
 			userIdList.add(userId);
