@@ -459,8 +459,10 @@ public class UpdateUser implements CustomCodeMethod {
 							removedEventList.add(eventId);
 						}
 					}
-					SMString relId = (SMString)relObject.getValue().get("relationship_id");
-					dataService.removeRelatedObjects("relationship", relId, "events_by_receiver", statReqList, true);
+					if (statReqList.size() > 0) {
+						SMString relId = (SMString)relObject.getValue().get("relationship_id");
+						dataService.removeRelatedObjects("relationship", relId, "events_by_receiver", statReqList, true);
+					}
 				}
 				// - relationships by others
 				relList = new ArrayList<SMObject>();
@@ -485,8 +487,10 @@ public class UpdateUser implements CustomCodeMethod {
 							removedEventList.add(eventId);
 						}
 					}
-					SMString relId = (SMString)relObject.getValue().get("relationship_id");
-					dataService.removeRelatedObjects("relationship", relId, "events_by_owner", statReqList, true);
+					if (statReqList.size() > 0) {
+						SMString relId = (SMString)relObject.getValue().get("relationship_id");
+						dataService.removeRelatedObjects("relationship", relId, "events_by_owner", statReqList, true);
+					}
 				}
 				returnMap.put("removed_events", removedEventList);
 			}

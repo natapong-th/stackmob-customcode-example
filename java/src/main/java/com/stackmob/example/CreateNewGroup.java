@@ -187,8 +187,12 @@ public class CreateNewGroup implements CustomCodeMethod {
 						newRelOrder.remove(relId);
 					}
 				}
-				dataService.addRelatedObjects("group", groupId, "relationships_by_owner", userAddList);
-				dataService.addRelatedObjects("group", groupId, "relationships_by_others", othersAddList);
+				if (userAddList.size() > 0) {
+					dataService.addRelatedObjects("group", groupId, "relationships_by_owner", userAddList);
+				}
+				if (othersAddList.size() > 0) {
+					dataService.addRelatedObjects("group", groupId, "relationships_by_others", othersAddList);
+				}
 				
 				// update relationship order
 				List<SMUpdate> groupUpdates = new ArrayList<SMUpdate>();
@@ -272,17 +276,23 @@ public class CreateNewGroup implements CustomCodeMethod {
 							// remove all events from both sides (no need to remove if any of the types is already block or delete)
 							if (typeUser.getValue().longValue() < 3L && typeOther.getValue().longValue() < 3L) {
 								if (relObject.getValue().containsKey("events_by_owner")) {
-									SMList<SMString> events = (SMList<SMString>)relObject.getValue().get("events_by_owner");
-									dataService.removeRelatedObjects("relationship", relId, "events_by_owner", events, true);
+									SMList<SMString> eventsValue = (SMList<SMString>)relObject.getValue().get("events_by_owner");
+									List<SMString> events = eventsValue.getValue();
+									if (events.size() > 0) {
+										dataService.removeRelatedObjects("relationship", relId, "events_by_owner", events, true);
+									}
 									if (userRole.equals("receiver")) {
-										removedEventIds.addAll(events.getValue());
+										removedEventIds.addAll(events);
 									}
 								}
 								if (relObject.getValue().containsKey("events_by_receiver")) {
-									SMList<SMString> events = (SMList<SMString>)relObject.getValue().get("events_by_receiver");
-									dataService.removeRelatedObjects("relationship", relId, "events_by_receiver", events, true);
+									SMList<SMString> eventsValue = (SMList<SMString>)relObject.getValue().get("events_by_receiver");
+									List<SMString> events = eventsValue.getValue();
+									if (events.size() > 0) {
+										dataService.removeRelatedObjects("relationship", relId, "events_by_receiver", events, true);
+									}
 									if (userRole.equals("owner")) {
-										removedEventIds.addAll(events.getValue());
+										removedEventIds.addAll(events);
 									}
 								}
 							}
@@ -312,7 +322,9 @@ public class CreateNewGroup implements CustomCodeMethod {
 										}
 									}
 									// remove groups from relationship's groups by user
-									dataService.removeRelatedObjects("relationship", relId, groupKey, relGroupIdList, false);
+									if (relGroupIdList.size() > 0) {
+										dataService.removeRelatedObjects("relationship", relId, groupKey, relGroupIdList, false);
+									}
 								}
 							}
 							// update type by user

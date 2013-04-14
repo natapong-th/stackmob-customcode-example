@@ -198,7 +198,9 @@ public class UpdateGroup implements CustomCodeMethod {
 						removeList.add(relId);
 					}
 				}
-				dataService.removeRelatedObjects("group", groupId, "relationships_by_owner", tempRemoveList, false);
+				if (tempRemoveList.size() > 0) {
+					dataService.removeRelatedObjects("group", groupId, "relationships_by_owner", tempRemoveList, false);
+				}
 				// - relationships by others
 				List<SMObject> relsOthers = new ArrayList<SMObject>();
 				if (groupObject.getValue().containsKey("relationships_by_others")) {
@@ -216,7 +218,9 @@ public class UpdateGroup implements CustomCodeMethod {
 						removeList.add(relId);
 					}
 				}
-				dataService.removeRelatedObjects("group", groupId, "relationships_by_others", tempRemoveList, false);
+				if (tempRemoveList.size() > 0) {
+					dataService.removeRelatedObjects("group", groupId, "relationships_by_others", tempRemoveList, false);
+				}
 				returnMap.put("unchanged_relationships", foundList);
 				returnMap.put("removed_relationships", removeList);
 				// 2.2. add relationships left in relationship order
@@ -247,8 +251,12 @@ public class UpdateGroup implements CustomCodeMethod {
 						newRelOrder.remove(relId);
 					}
 				}
-				dataService.addRelatedObjects("group", groupId, "relationships_by_owner", userAddList);
-				dataService.addRelatedObjects("group", groupId, "relationships_by_others", othersAddList);
+				if (userAddList.size() > 0) {
+					dataService.addRelatedObjects("group", groupId, "relationships_by_owner", userAddList);
+				}
+				if (othersAddList.size() > 0) {
+					dataService.addRelatedObjects("group", groupId, "relationships_by_others", othersAddList);
+				}
 				returnMap.put("added_relationships", addList);
 				// 2.3. change relationship order
 				groupUpdates.add(new SMSet("relationship_order", new SMList<SMString>(newRelOrder)));
@@ -322,17 +330,23 @@ public class UpdateGroup implements CustomCodeMethod {
 							// remove all events from both sides (no need to remove if any of the types is already block or delete)
 							if (typeUser.getValue().longValue() < 3L && typeOther.getValue().longValue() < 3L) {
 								if (relObject.getValue().containsKey("events_by_owner")) {
-									SMList<SMString> events = (SMList<SMString>)relObject.getValue().get("events_by_owner");
-									dataService.removeRelatedObjects("relationship", relId, "events_by_owner", events, true);
+									SMList<SMString> eventsValue = (SMList<SMString>)relObject.getValue().get("events_by_owner");
+									List<SMString> events = eventsValue.getValue();
+									if (events.size() > 0) {
+										dataService.removeRelatedObjects("relationship", relId, "events_by_owner", events, true);
+									}
 									if (userRole.equals("receiver")) {
-										removedEventIds.addAll(events.getValue());
+										removedEventIds.addAll(events);
 									}
 								}
 								if (relObject.getValue().containsKey("events_by_receiver")) {
-									SMList<SMString> events = (SMList<SMString>)relObject.getValue().get("events_by_receiver");
-									dataService.removeRelatedObjects("relationship", relId, "events_by_receiver", events, true);
+									SMList<SMString> eventsValue = (SMList<SMString>)relObject.getValue().get("events_by_receiver");
+									List<SMString> events = eventsValue.getValue();
+									if (events.size() > 0) {
+										dataService.removeRelatedObjects("relationship", relId, "events_by_receiver", events, true);
+									}
 									if (userRole.equals("owner")) {
-										removedEventIds.addAll(events.getValue());
+										removedEventIds.addAll(events);
 									}
 								}
 							}
@@ -362,7 +376,9 @@ public class UpdateGroup implements CustomCodeMethod {
 										}
 									}
 									// remove groups from relationship's groups by user
-									dataService.removeRelatedObjects("relationship", relId, groupKey, groupIdList, false);
+									if (groupIdList.size() > 0) {
+										dataService.removeRelatedObjects("relationship", relId, groupKey, groupIdList, false);
+									}
 								}
 							}
 							// update type by user

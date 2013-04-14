@@ -127,7 +127,6 @@ public class InitializeUser implements CustomCodeMethod {
 			// 1. set initial user's fields
 			List<SMUpdate> userUpdates = new ArrayList<SMUpdate>();
 			userUpdates.add(new SMSet("name", userId));
-			userUpdates.add(new SMSet("profile_image_url", new SMString("")));
 			userUpdates.add(new SMSet("action", new SMString("")));
 			userUpdates.add(new SMSet("place", new SMString("")));
 			long currentTime = System.currentTimeMillis();
@@ -180,7 +179,9 @@ public class InitializeUser implements CustomCodeMethod {
 				dataService.updateObject("relationship", relId, relUpdates);
 			}
 			// add all relationships in user's relationships_by_others
-			dataService.addRelatedObjects("user", userId, "relationships_by_others", relIds);
+			if (relIds.size() > 0) {
+				dataService.addRelatedObjects("user", userId, "relationships_by_others", relIds);
+			}
 			returnMap.put("relationship_ids", relIds);
 			
 			// return updated data for local database
