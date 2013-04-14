@@ -163,7 +163,7 @@ public class CreateStatusRequest implements CustomCodeMethod {
 					eventMap.put("type", new SMInt(3L));
 					SMObject eventObject = dataService.createObject("event", new SMObject(eventMap));
 					// get the new event id
-					SMString eventId = (SMString)eventObject.getValue().get("relationship_id");
+					SMString eventId = (SMString)eventObject.getValue().get("event_id");
 					// add event in relationship's events by user
 					List<SMString> eventIdList = new ArrayList<SMString>();
 					eventIdList.add(eventId);
