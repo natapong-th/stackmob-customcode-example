@@ -169,8 +169,10 @@ public class GetDatabase implements CustomCodeMethod {
 			long userModDate = userModValue.getValue().longValue();
 			if (lastSyncDate < userModDate) {
 				for (int i = 0; i < userStringFields.length; i++) {
-					SMString fieldValue = (SMString)userObject.getValue().get(userStringFields[i]);
-					returnMap.put(userStringFields[i], fieldValue.getValue());
+					if (userObject.getValue().containsKey(userStringFields[i])) {
+						SMString fieldValue = (SMString)userObject.getValue().get(userStringFields[i]);
+						returnMap.put(userStringFields[i], fieldValue.getValue());
+					}
 				}
 				List<SMString> groupOrderList = new ArrayList<SMString>();
 				if (userObject.getValue().containsKey("group_order")) {
